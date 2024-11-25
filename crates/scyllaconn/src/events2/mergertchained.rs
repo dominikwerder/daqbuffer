@@ -11,9 +11,9 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::merge::MergeableTy;
 use items_0::WithLen;
 use items_2::channelevents::ChannelEvents;
-use items_2::merger::Mergeable;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::range::evrange::SeriesRange;
@@ -145,7 +145,7 @@ pub struct MergeRtsChained {
     buf_lt: VecDeque<ChannelEvents>,
     out: VecDeque<ChannelEvents>,
     buf_before: Option<ChannelEvents>,
-    ts_seen_max: u64,
+    ts_seen_max: TsNano,
     tracer: StreamImplTracer,
 }
 
@@ -169,7 +169,7 @@ impl MergeRtsChained {
             buf_lt: VecDeque::new(),
             out: VecDeque::new(),
             buf_before: None,
-            ts_seen_max: 0,
+            ts_seen_max: TsNano::from_ns(0),
             tracer: StreamImplTracer::new("MergeRtsChained".into(), 2000, 2000),
         }
     }
@@ -260,7 +260,7 @@ impl MergeRtsChained {
         trace_fetch!("constrained_range  {:?}  {:?}", full, buf.front());
         if let Some(e) = buf.front() {
             if let Some(ts) = e.ts_min() {
-                let nrange = NanoRange::from((full.beg().ns(), ts));
+                let nrange = NanoRange::from((full.beg().ns(), ts.ns()));
                 ScyllaSeriesRange::from(&SeriesRange::from(nrange))
             } else {
                 full.clone()
@@ -311,7 +311,7 @@ impl MergeRtsChained {
             before.new_empty()
         });
         if let Some(tsn) = before.ts_max() {
-            let tsn = TsNano::from_ns(tsn);
+            let tsn = tsn;
             if buf.ts_max().map_or(true, |x| tsn.ns() > x) {
                 trace_fetch!("move_latest_to_before_buf  move possible before item  {tsn}");
                 let n = before.len();
@@ -373,7 +373,7 @@ impl Stream for MergeRtsChained {
                         self.ts_seen_max = item_max;
                     }
                 }
-                if let Some(ix) = item.find_highest_index_lt(self.range.beg().ns()) {
+                if let Some(ix) = item.find_highest_index_lt(self.range.beg()) {
                     trace_fetch!("see item before range  ix {ix}");
                 }
                 break Ready(Some(Ok(item)));

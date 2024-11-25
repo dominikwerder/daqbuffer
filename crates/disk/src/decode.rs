@@ -6,7 +6,7 @@ use items_0::scalar_ops::ScalarOps;
 use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
-use items_0::Events;
+use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::WithLen;
 use items_2::empty::empty_events_dyn_ev;
 use items_2::eventfull::EventFull;
@@ -137,15 +137,36 @@ impl ScalarValueFromBytes<bool> for bool {
 }
 
 pub trait ValueFromBytes: Send {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error>;
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error>;
 }
 
 pub trait ValueDim0FromBytes {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error>;
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error>;
 }
 
 pub trait ValueDim1FromBytes {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error>;
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error>;
 }
 
 pub struct ValueDim0FromBytesImpl<STY>
@@ -170,7 +191,14 @@ impl<STY> ValueDim0FromBytes for ValueDim0FromBytesImpl<STY>
 where
     STY: ScalarOps + ScalarValueFromBytes<STY>,
 {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error> {
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error> {
         if let Some(evs) = events.as_any_mut().downcast_mut::<EventsDim0<STY>>() {
             let v = <STY as ScalarValueFromBytes<STY>>::convert(buf, endian)?;
             evs.values.push_back(v);
@@ -187,7 +215,14 @@ impl<STY> ValueFromBytes for ValueDim0FromBytesImpl<STY>
 where
     STY: ScalarOps + ScalarValueFromBytes<STY>,
 {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error> {
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error> {
         ValueDim0FromBytes::convert(self, ts, pulse, buf, endian, events)
     }
 }
@@ -216,7 +251,14 @@ impl<STY> ValueFromBytes for ValueDim1FromBytesImpl<STY>
 where
     STY: ScalarOps + ScalarValueFromBytes<STY>,
 {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error> {
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error> {
         ValueDim1FromBytes::convert(self, ts, pulse, buf, endian, events)
     }
 }
@@ -225,7 +267,14 @@ impl<STY> ValueDim1FromBytes for ValueDim1FromBytesImpl<STY>
 where
     STY: ScalarOps + ScalarValueFromBytes<STY>,
 {
-    fn convert(&self, ts: u64, pulse: u64, buf: &[u8], endian: Endian, events: &mut dyn Events) -> Result<(), Error> {
+    fn convert(
+        &self,
+        ts: u64,
+        pulse: u64,
+        buf: &[u8],
+        endian: Endian,
+        events: &mut dyn BinningggContainerEventsDyn,
+    ) -> Result<(), Error> {
         if let Some(evs) = events.as_any_mut().downcast_mut::<EventsDim1<STY>>() {
             let n = if let Shape::Wave(n) = self.shape {
                 n
@@ -304,7 +353,7 @@ pub struct EventsDynStream {
     scalar_type: ScalarType,
     shape: Shape,
     events_full: Pin<Box<dyn Stream<Item = Sitemty<EventFull>> + Send>>,
-    events_out: Box<dyn Events>,
+    events_out: Box<dyn BinningggContainerEventsDyn>,
     scalar_conv: Box<dyn ValueFromBytes>,
     emit_threshold: usize,
     done: bool,
@@ -346,7 +395,7 @@ impl EventsDynStream {
         Ok(ret)
     }
 
-    fn replace_events_out(&mut self) -> Result<Box<dyn Events>, Error> {
+    fn replace_events_out(&mut self) -> Result<Box<dyn BinningggContainerEventsDyn>, Error> {
         let st = &self.scalar_type;
         let sh = &self.shape;
         // error!("TODO replace_events_out feed through transform");
@@ -374,7 +423,7 @@ impl EventsDynStream {
     fn handle_stream_item(
         &mut self,
         item: StreamItem<RangeCompletableItem<EventFull>>,
-    ) -> Result<Option<Sitemty<Box<dyn Events>>>, Error> {
+    ) -> Result<Option<Sitemty<Box<dyn BinningggContainerEventsDyn>>>, Error> {
         let ret = match item {
             StreamItem::DataItem(item) => match item {
                 RangeCompletableItem::RangeComplete => {
@@ -401,7 +450,7 @@ impl EventsDynStream {
 }
 
 impl Stream for EventsDynStream {
-    type Item = Sitemty<Box<dyn Events>>;
+    type Item = Sitemty<Box<dyn BinningggContainerEventsDyn>>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;

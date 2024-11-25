@@ -3,8 +3,10 @@ use err::thiserror;
 use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
+use items_0::merge::DrainIntoDstResult;
+use items_0::merge::DrainIntoNewResult;
+use items_0::merge::MergeableTy;
 use items_0::Events;
-use items_2::merger::Mergeable;
 use netpod::log::*;
 use netpod::stream_impl_tracer::StreamImplTracer;
 use netpod::TsNano;
@@ -61,7 +63,7 @@ enum State {
 pub struct OneBeforeAndBulk<S, T>
 where
     S: Stream + Unpin,
-    T: Mergeable + Unpin,
+    T: MergeableTy + Unpin,
 {
     ts0: TsNano,
     inp: S,
@@ -78,7 +80,7 @@ where
 impl<S, T> OneBeforeAndBulk<S, T>
 where
     S: Stream + Unpin,
-    T: Mergeable + Unpin,
+    T: MergeableTy + Unpin,
 {
     fn selfname() -> &'static str {
         std::any::type_name::<Self>()
@@ -106,9 +108,11 @@ where
                 debug!("buf set but empty");
                 None
             } else {
-                let mut ret = buf.new_empty();
-                buf.drain_into(&mut ret, (buf.len() - 1, buf.len()));
-                Some(ret)
+                match buf.drain_into_new(buf.len() - 1..buf.len()) {
+                    DrainIntoNewResult::Done(ret) => Some(ret),
+                    DrainIntoNewResult::Partial(_) => panic!(),
+                    DrainIntoNewResult::NotCompatible => panic!(),
+                }
             }
         } else {
             None
@@ -119,7 +123,7 @@ where
 impl<S, T, E> Stream for OneBeforeAndBulk<S, T>
 where
     S: Stream<Item = Result<T, E>> + Unpin,
-    T: Events + Mergeable + Unpin,
+    T: Events + MergeableTy + Unpin,
     E: std::error::Error + Send + 'static,
 {
     type Item = Result<Output<T>, Error>;
@@ -135,14 +139,14 @@ where
                 match &self.state {
                     State::Begin => match self.inp.poll_next_unpin(cx) {
                         Ready(Some(Ok(mut item))) => {
-                            if let Some(tsmin) = Mergeable::ts_min(&item) {
-                                let tsmin = TsNano::from_ns(tsmin);
+                            if let Some(tsmin) = MergeableTy::ts_min(&item) {
+                                let tsmin = tsmin;
                                 if tsmin < self.tslast {
                                     self.state = State::Done;
                                     let e = Error::Unordered;
                                     break Ready(Some(Err(e)));
                                 } else {
-                                    self.tslast = TsNano::from_ns(Mergeable::ts_max(&item).unwrap());
+                                    self.tslast = MergeableTy::ts_max(&item).unwrap();
                                 }
                             }
                             if item.verify() != true {
@@ -176,15 +180,20 @@ where
                                         self.dbgname,
                                         item.len()
                                     );
-                                    let buf = self.buf.get_or_insert_with(|| item.new_empty());
-                                    match item.drain_into_evs(buf, (0, item.len())) {
-                                        Ok(()) => {
-                                            continue;
-                                        }
-                                        Err(e) => {
-                                            self.state = State::Done;
-                                            Ready(Some(Err(Error::Input(Box::new(e)))))
-                                        }
+                                    match self.buf.as_mut() {
+                                        Some(buf) => match item.drain_into(buf, 0..item.len()) {
+                                            DrainIntoDstResult::Done => continue,
+                                            DrainIntoDstResult::Partial => panic!(),
+                                            DrainIntoDstResult::NotCompatible => panic!(),
+                                        },
+                                        None => match item.drain_into_new(0..item.len()) {
+                                            DrainIntoNewResult::Done(buf) => {
+                                                self.buf = Some(buf);
+                                                continue;
+                                            }
+                                            DrainIntoNewResult::Partial(_) => panic!(),
+                                            DrainIntoNewResult::NotCompatible => panic!(),
+                                        },
                                     }
                                 } else if pp == 0 {
                                     // all entries are bulk
@@ -204,25 +213,56 @@ where
                                     // mixed
                                     trace_transition!("transition with mixed to Bulk");
                                     self.state = State::Bulk;
-                                    let buf = self.buf.get_or_insert_with(|| item.new_empty());
-                                    match item.drain_into_evs(buf, (0, pp)) {
-                                        Ok(()) => {
-                                            if let Some(before) = self.consume_buf_get_latest() {
-                                                self.out.push_back(item);
-                                                let item = Output::Before(before);
-                                                trace_emit!("State::Begin  Before  {}  emit {:?}", self.dbgname, item);
-                                                Ready(Some(Ok(item)))
-                                            } else {
-                                                let item = Output::Bulk(item);
-                                                trace_emit!("State::Begin  Bulk    {}  emit {:?}", self.dbgname, item);
-                                                Ready(Some(Ok(item)))
+                                    match self.buf.as_mut() {
+                                        Some(buf) => match item.drain_into(buf, 0..pp) {
+                                            DrainIntoDstResult::Done => {
+                                                if let Some(before) = self.consume_buf_get_latest() {
+                                                    self.out.push_back(item);
+                                                    let item = Output::Before(before);
+                                                    trace_emit!(
+                                                        "State::Begin  Before  {}  emit {:?}",
+                                                        self.dbgname,
+                                                        item
+                                                    );
+                                                    Ready(Some(Ok(item)))
+                                                } else {
+                                                    let item = Output::Bulk(item);
+                                                    trace_emit!(
+                                                        "State::Begin  Bulk    {}  emit {:?}",
+                                                        self.dbgname,
+                                                        item
+                                                    );
+                                                    Ready(Some(Ok(item)))
+                                                }
                                             }
-                                        }
-                                        Err(e) => {
-                                            self.state = State::Done;
-                                            let e = Error::Input(Box::new(e));
-                                            Ready(Some(Err(e)))
-                                        }
+                                            DrainIntoDstResult::Partial => panic!(),
+                                            DrainIntoDstResult::NotCompatible => panic!(),
+                                        },
+                                        None => match item.drain_into_new(0..pp) {
+                                            DrainIntoNewResult::Done(buf) => {
+                                                self.buf = Some(buf);
+                                                if let Some(before) = self.consume_buf_get_latest() {
+                                                    self.out.push_back(item);
+                                                    let item = Output::Before(before);
+                                                    trace_emit!(
+                                                        "State::Begin  Before  {}  emit {:?}",
+                                                        self.dbgname,
+                                                        item
+                                                    );
+                                                    Ready(Some(Ok(item)))
+                                                } else {
+                                                    let item = Output::Bulk(item);
+                                                    trace_emit!(
+                                                        "State::Begin  Bulk    {}  emit {:?}",
+                                                        self.dbgname,
+                                                        item
+                                                    );
+                                                    Ready(Some(Ok(item)))
+                                                }
+                                            }
+                                            DrainIntoNewResult::Partial(_) => panic!(),
+                                            DrainIntoNewResult::NotCompatible => panic!(),
+                                        },
                                     }
                                 }
                             }
@@ -254,14 +294,14 @@ where
                         } else {
                             match self.inp.poll_next_unpin(cx) {
                                 Ready(Some(Ok(item))) => {
-                                    if let Some(tsmin) = Mergeable::ts_min(&item) {
-                                        let tsmin = TsNano::from_ns(tsmin);
+                                    if let Some(tsmin) = MergeableTy::ts_min(&item) {
+                                        let tsmin = tsmin;
                                         if tsmin < self.tslast {
                                             self.state = State::Done;
                                             let e = Error::Unordered;
                                             break Ready(Some(Err(e)));
                                         } else {
-                                            self.tslast = TsNano::from_ns(Mergeable::ts_max(&item).unwrap());
+                                            self.tslast = MergeableTy::ts_max(&item).unwrap();
                                         }
                                     }
                                     if item.verify() != true {

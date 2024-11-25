@@ -10,12 +10,11 @@ use err::ThisError;
 use futures_util::Future;
 use futures_util::StreamExt;
 use items_0::scalar_ops::ScalarOps;
+use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::Appendable;
 use items_0::Empty;
-use items_0::Events;
 use items_0::WithLen;
-use items_2::eventsdim0::EventsDim0;
-use items_2::eventsdim1::EventsDim1;
+use items_2::binning::container_events::ContainerEvents;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::DtNano;
@@ -57,7 +56,7 @@ impl From<crate::worker::Error> for Error {
 pub(super) trait ValTy: Sized + 'static {
     type ScaTy: ScalarOps + std::default::Default;
     type ScyTy: scylla::cql_to_rust::FromCqlVal<scylla::frame::response::result::CqlValue>;
-    type Container: Events + Appendable<Self>;
+    type Container: BinningggContainerEventsDyn + Appendable<Self>;
     fn from_scyty(inp: Self::ScyTy) -> Self;
     fn from_valueblob(inp: Vec<u8>) -> Self;
     fn table_name() -> &'static str;
@@ -69,7 +68,7 @@ pub(super) trait ValTy: Sized + 'static {
         jobtrace: ReadJobTrace,
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
-    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>;
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>>;
     fn convert_rows(
         rows: Vec<Row>,
         range: ScyllaSeriesRange,
@@ -85,7 +84,7 @@ macro_rules! impl_scaty_scalar {
         impl ValTy for $st {
             type ScaTy = $st;
             type ScyTy = $st_scy;
-            type Container = EventsDim0<Self::ScaTy>;
+            type Container = ContainerEvents<Self::ScaTy>;
 
             fn from_scyty(inp: Self::ScyTy) -> Self {
                 inp as Self
@@ -116,7 +115,7 @@ macro_rules! impl_scaty_scalar {
                 jobtrace: ReadJobTrace,
                 scy: Arc<Session>,
                 stmts: Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>> {
                 Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
             }
 
@@ -139,7 +138,7 @@ macro_rules! impl_scaty_array {
         impl ValTy for $vt {
             type ScaTy = $st;
             type ScyTy = $st_scy;
-            type Container = EventsDim1<Self::ScaTy>;
+            type Container = ContainerEvents<Vec<Self::ScaTy>>;
 
             fn from_scyty(inp: Self::ScyTy) -> Self {
                 inp.into_iter().map(|x| x as Self::ScaTy).collect()
@@ -183,7 +182,7 @@ macro_rules! impl_scaty_array {
                 jobtrace: ReadJobTrace,
                 scy: Arc<Session>,
                 stmts: Arc<StmtsEvents>,
-            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>> {
                 Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
             }
 
@@ -204,7 +203,7 @@ macro_rules! impl_scaty_array {
 impl ValTy for EnumVariant {
     type ScaTy = EnumVariant;
     type ScyTy = i16;
-    type Container = EventsDim0<EnumVariant>;
+    type Container = ContainerEvents<EnumVariant>;
 
     fn from_scyty(inp: Self::ScyTy) -> Self {
         let _ = inp;
@@ -237,7 +236,7 @@ impl ValTy for EnumVariant {
         jobtrace: ReadJobTrace,
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
-    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>> {
         Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
     }
 
@@ -256,7 +255,7 @@ impl ValTy for EnumVariant {
 impl ValTy for Vec<String> {
     type ScaTy = String;
     type ScyTy = Vec<String>;
-    type Container = EventsDim1<String>;
+    type Container = ContainerEvents<Vec<String>>;
 
     fn from_scyty(inp: Self::ScyTy) -> Self {
         inp
@@ -289,7 +288,7 @@ impl ValTy for Vec<String> {
         jobtrace: ReadJobTrace,
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
-    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>> {
         let fut = read_next_values_2::<Self>(opts, jobtrace, scy, stmts);
         Box::pin(fut)
     }
@@ -414,7 +413,9 @@ pub(super) struct ReadNextValuesParams {
     pub jobtrace: ReadJobTrace,
 }
 
-pub(super) async fn read_next_values<ST>(params: ReadNextValuesParams) -> Result<(Box<dyn Events>, ReadJobTrace), Error>
+pub(super) async fn read_next_values<ST>(
+    params: ReadNextValuesParams,
+) -> Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>
 where
     ST: ValTy,
 {
@@ -446,7 +447,13 @@ where
             }
         };
         Box::pin(fut)
-            as Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), crate::worker::Error>> + Send>>
+            as Pin<
+                Box<
+                    dyn Future<
+                            Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), crate::worker::Error>,
+                        > + Send,
+                >,
+            >
     };
     let (res, jobtrace) = scyqueue.read_next_values(futgen, jobtrace).await?;
     Ok((res, jobtrace))
@@ -457,7 +464,7 @@ async fn read_next_values_2<ST>(
     mut jobtrace: ReadJobTrace,
     scy: Arc<Session>,
     stmts: Arc<StmtsEvents>,
-) -> Result<(Box<dyn Events>, ReadJobTrace), Error>
+) -> Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>
 where
     ST: ValTy,
 {
@@ -662,7 +669,7 @@ fn convert_rows_enum(
     bck: bool,
     last_before: &mut Option<(TsNano, EnumVariant)>,
 ) -> Result<<EnumVariant as ValTy>::Container, Error> {
-    let mut ret = <EnumVariant as ValTy>::Container::empty();
+    let mut ret = <EnumVariant as ValTy>::Container::new();
     trace_fetch!("convert_rows_enum  {}", <EnumVariant as ValTy>::st_name());
     for row in rows {
         let (ts, value) = if with_values {
@@ -688,7 +695,7 @@ fn convert_rows_enum(
                 // TODO count as logic error
                 error!("ts >= range.beg");
             } else if ts < range.beg() {
-                ret.push(ts.ns(), 0, value);
+                ret.push_back(ts, value);
             } else {
                 *last_before = Some((ts, value));
             }
@@ -697,7 +704,7 @@ fn convert_rows_enum(
                 // TODO count as logic error
                 error!("ts >= range.end");
             } else if ts >= range.beg() {
-                ret.push(ts.ns(), 0, value);
+                ret.push_back(ts, value);
             } else {
                 if last_before.is_none() {
                     warn!("encounter event before range in forward read {ts}");

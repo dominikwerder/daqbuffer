@@ -12,7 +12,8 @@ use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use items_0::Events;
+use items_0::merge::MergeableDyn;
+use items_0::timebin::BinningggContainerEventsDyn;
 use items_2::channelevents::ChannelEvents;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
@@ -75,7 +76,6 @@ pub enum Error {
     ReadQueueEmptyBck,
     ReadQueueEmptyFwd,
     Logic,
-    Merge(#[from] items_0::MergeError),
     TruncateLogic,
     AlreadyTaken,
 }
@@ -84,7 +84,7 @@ struct FetchMsp {
     fut: Pin<Box<dyn Future<Output = Result<Vec<TsMs>, crate::events2::msp::Error>> + Send>>,
 }
 
-type ReadEventsFutOut = Result<(Box<dyn Events>, ReadJobTrace), crate::events2::events::Error>;
+type ReadEventsFutOut = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), crate::events2::events::Error>;
 
 type FetchEventsFut = Pin<Box<dyn Future<Output = ReadEventsFutOut> + Send>>;
 
@@ -181,7 +181,9 @@ struct FetchEvents {
 }
 
 impl FetchEvents {
-    fn from_fut(fut: Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>) -> Self {
+    fn from_fut(
+        fut: Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>>,
+    ) -> Self {
         Self { fut }
     }
 }
@@ -255,7 +257,7 @@ pub struct EventsStreamRt {
     msp_inp: MspStreamRt,
     msp_buf: VecDeque<TsMs>,
     msp_buf_bck: VecDeque<TsMs>,
-    out: VecDeque<Box<dyn Events>>,
+    out: VecDeque<Box<dyn BinningggContainerEventsDyn>>,
     out_cnt: u64,
     ts_seen_max: u64,
     qucap: usize,
@@ -325,7 +327,7 @@ impl EventsStreamRt {
         bck: bool,
         mfi: MakeFutInfo,
         jobtrace: ReadJobTrace,
-    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>> {
+    ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>> {
         let opts = ReadNextValuesOpts::new(mfi.rt, mfi.series, ts_msp, mfi.range, !bck, mfi.readopts, mfi.scyqueue);
         let scalar_type = mfi.ch_conf.scalar_type().clone();
         let shape = mfi.ch_conf.shape().clone();
@@ -491,9 +493,9 @@ impl Stream for EventsStreamRt {
                             item_min,
                             self.ts_seen_max
                         );
-                        let mut r = items_2::merger::Mergeable::new_empty(&item);
-                        match items_2::merger::Mergeable::find_highest_index_lt(&item, self.ts_seen_max) {
-                            Some(ix) => match items_2::merger::Mergeable::drain_into(&mut item, &mut r, (0, 1 + ix)) {
+                        let mut r = MergeableDyn::new_empty(&item);
+                        match MergeableDyn::find_highest_index_lt(&item, self.ts_seen_max) {
+                            Some(ix) => match MergeableDyn::drain_into(&mut item, &mut r, (0, 1 + ix)) {
                                 Ok(()) => {
                                     // TODO count for metrics
                                 }
@@ -584,16 +586,15 @@ impl Stream for EventsStreamRt {
                     ReadingState::FetchEvents(st2) => match st2.fut.poll_unpin(cx) {
                         Ready(x) => match x {
                             Ok((mut evs, jobtrace)) => {
-                                use items_2::merger::Mergeable;
                                 trace_fetch!("ReadingBck  {jobtrace}");
                                 trace_fetch!("ReadingBck  FetchEvents  got len {}", evs.len());
-                                for ts in Mergeable::tss(&evs) {
+                                for ts in MergeableDyn::tss_for_testing(&evs) {
                                     trace_every_event!("ReadingBck  FetchEvents     ts {}", ts.fmt());
                                 }
-                                if let Some(ix) = Mergeable::find_highest_index_lt(&evs, self.range.beg().ns()) {
+                                if let Some(ix) = MergeableDyn::find_highest_index_lt(&evs, self.range.beg().ns()) {
                                     trace_fetch!("ReadingBck  FetchEvents  find_highest_index_lt {:?}", ix);
-                                    let mut y = Mergeable::new_empty(&evs);
-                                    match Mergeable::drain_into(&mut evs, &mut y, (ix, 1 + ix)) {
+                                    let mut y = MergeableDyn::new_empty(&evs);
+                                    match MergeableDyn::drain_into(&mut evs, &mut y, (ix, 1 + ix)) {
                                         Ok(()) => {
                                             trace_fetch!("ReadingBck  FetchEvents  drained y len {:?}", y.len());
                                             self.out.push_back(y);
@@ -660,9 +661,8 @@ impl Stream for EventsStreamRt {
                             Ok((evs, mut jobtrace)) => {
                                 jobtrace
                                     .add_event_now(crate::events::ReadEventKind::EventsStreamRtSees(evs.len() as u32));
-                                use items_2::merger::Mergeable;
                                 trace_fetch!("ReadingFwd  {jobtrace}");
-                                for ts in Mergeable::tss(&evs) {
+                                for ts in MergeableDyn::tss_for_testing(&evs) {
                                     trace_every_event!("ReadingFwd  FetchEvents     ts {}", ts.fmt());
                                 }
                                 self.out.push_back(evs);

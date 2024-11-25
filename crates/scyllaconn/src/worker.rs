@@ -10,7 +10,7 @@ use err::thiserror;
 use err::ThisError;
 use futures_util::Future;
 use futures_util::StreamExt;
-use items_0::Events;
+use items_0::timebin::BinningggContainerEventsDyn;
 use items_2::binning::container_bins::ContainerBins;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
@@ -78,10 +78,11 @@ struct ReadNextValues {
                 Arc<Session>,
                 Arc<StmtsEvents>,
                 ReadJobTrace,
-            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>
-            + Send,
+            ) -> Pin<
+                Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>,
+            > + Send,
     >,
-    tx: Sender<Result<(Box<dyn Events>, ReadJobTrace), Error>>,
+    tx: Sender<Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>>,
     jobtrace: ReadJobTrace,
 }
 
@@ -115,14 +116,15 @@ impl ScyllaQueue {
         &self,
         futgen: F,
         jobtrace: ReadJobTrace,
-    ) -> Result<(Box<dyn Events>, ReadJobTrace), Error>
+    ) -> Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>
     where
         F: FnOnce(
                 Arc<Session>,
                 Arc<StmtsEvents>,
                 ReadJobTrace,
-            ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn Events>, ReadJobTrace), Error>> + Send>>
-            + Send
+            ) -> Pin<
+                Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>,
+            > + Send
             + 'static,
     {
         let (tx, rx) = async_channel::bounded(1);
