@@ -14,7 +14,7 @@ use netpod::log::*;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::APP_CBOR_FRAMED;
-use streams::cbor_stream::FramedBytesToSitemtyDynEventsStream;
+use streams::cbor_stream::FramedBytesToChannelEventsStream;
 use url::Url;
 
 #[derive(Debug, ThisError)]
@@ -49,7 +49,7 @@ pub async fn fetch_cbor(url: &str, scalar_type: ScalarType, shape: Shape) -> Res
     }
     debug!("fetch_cbor  head {head:?}");
     let stream = IncomingStream::new(body);
-    let stream = FramedBytesToSitemtyDynEventsStream::new(stream, scalar_type, shape);
+    let stream = FramedBytesToChannelEventsStream::new(stream, scalar_type, shape);
     let stream = stream
         .map(|item| {
             info!("{item:?}");

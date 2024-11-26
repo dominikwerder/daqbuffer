@@ -1,4 +1,3 @@
-use crate::api4::events::bytes_chunks_to_len_framed_str;
 use crate::bodystream::response;
 use crate::channelconfig::ch_conf_from_binned;
 use crate::requests::accepts_json_framed;
@@ -40,6 +39,7 @@ use std::sync::Arc;
 use streams::collect::CollectResult;
 use streams::eventsplainreader::DummyCacheReadProvider;
 use streams::eventsplainreader::SfDatabufferEventReadProvider;
+use streams::lenframe::bytes_chunks_to_len_framed_str;
 use streams::timebin::cached::reader::EventsReadProvider;
 use streams::timebin::CacheReadProvider;
 use tracing::Instrument;

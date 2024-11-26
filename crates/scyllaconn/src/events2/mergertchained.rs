@@ -362,8 +362,9 @@ impl Stream for MergeRtsChained {
                 self.out.push_back(x);
             }
             if let Some(item) = self.out.pop_front() {
-                trace_emit!("emit item  {}  {:?}", items_0::Events::verify(&item), item);
-                if items_0::Events::verify(&item) != true {
+                let verified = item.is_consistent();
+                trace_emit!("emit item  {}  {:?}", verified, item);
+                if verified == false {
                     debug!("{}bad item {:?}", "\n\n--------------------------\n", item);
                     self.state = State::Done;
                 }

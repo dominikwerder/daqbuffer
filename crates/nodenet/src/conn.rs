@@ -6,7 +6,6 @@ use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
-use items_0::on_sitemty_data;
 use items_0::streamitem::sitem_err2_from_string;
 use items_0::streamitem::LogItem;
 use items_0::streamitem::RangeCompletableItem;
@@ -29,6 +28,7 @@ use scyllaconn::worker::ScyllaQueue;
 use std::net::SocketAddr;
 use std::pin::Pin;
 use streamio::tcpreadasbytes::TcpReadAsBytes;
+use streams::frames::frameable_stream_to_bytes_stream;
 use streams::frames::inmem::BoxedBytesStream;
 use streams::frames::inmem::InMemoryFrameStream;
 use streams::tcprawclient::TEST_BACKEND;
@@ -56,6 +56,7 @@ pub enum Error {
     Framable(#[from] items_2::framable::Error),
     Frame(#[from] items_2::frame::Error),
     InMem(#[from] streams::frames::inmem::Error),
+    FramedStream(#[from] streams::frames::Error),
 }
 
 pub async fn events_service(ncc: NodeConfigCached) -> Result<(), Error> {
@@ -139,23 +140,7 @@ pub async fn create_response_bytes_stream(
         Ok(ret)
     } else {
         let stream = make_channel_events_stream_data(evq, reqctx, scyqueue, ncc).await?;
-        let stream = stream.map(move |x| {
-            on_sitemty_data!(x, |x: ChannelEvents| {
-                match x {
-                    ChannelEvents::Events(evs) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-                        ChannelEvents::Events(evs),
-                    ))),
-                    ChannelEvents::Status(x) => Ok(StreamItem::DataItem(RangeCompletableItem::Data(
-                        ChannelEvents::Status(x),
-                    ))),
-                }
-            })
-        });
-        let stream = stream.map(|x| {
-            x.make_frame_dyn()
-                .map(bytes::BytesMut::freeze)
-                .map_err(sitem_err2_from_string)
-        });
+        let stream = frameable_stream_to_bytes_stream(stream).map_err(sitem_err2_from_string);
         let ret = Box::pin(stream);
         Ok(ret)
     }

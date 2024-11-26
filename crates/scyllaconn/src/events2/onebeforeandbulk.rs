@@ -1,12 +1,10 @@
 use daqbuf_err as err;
 use err::thiserror;
-use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::merge::DrainIntoDstResult;
 use items_0::merge::DrainIntoNewResult;
 use items_0::merge::MergeableTy;
-use items_0::Events;
 use netpod::log::*;
 use netpod::stream_impl_tracer::StreamImplTracer;
 use netpod::TsNano;
@@ -38,7 +36,7 @@ macro_rules! tracer_loop_enter {
 #[allow(unused)]
 macro_rules! debug_fetch { ($($arg:tt)*) => ( if true { debug!($($arg)*); } ) }
 
-#[derive(Debug, ThisError)]
+#[derive(Debug, thiserror::Error)]
 #[cstm(name = "EventsOneBeforeAndBulk")]
 pub enum Error {
     Unordered,
@@ -123,7 +121,7 @@ where
 impl<S, T, E> Stream for OneBeforeAndBulk<S, T>
 where
     S: Stream<Item = Result<T, E>> + Unpin,
-    T: Events + MergeableTy + Unpin,
+    T: MergeableTy + Unpin,
     E: std::error::Error + Send + 'static,
 {
     type Item = Result<Output<T>, Error>;
@@ -149,7 +147,7 @@ where
                                     self.tslast = MergeableTy::ts_max(&item).unwrap();
                                 }
                             }
-                            if item.verify() != true {
+                            if item.is_consistent() == false {
                                 self.state = State::Done;
                                 let e = Error::Unordered;
                                 Ready(Some(Err(e)))
@@ -165,14 +163,80 @@ where
                                     }
                                 }
                                 // Separate events into before and bulk
-                                let tss = Events::tss(&item);
-                                let pp = tss.partition_point(|&x| x < self.ts0.ns());
-                                trace_transition!("partition_point  {pp:?}  {n:?}", n = tss.len());
-                                if pp > item.len() {
-                                    error!("bad partition point  {}  {}", pp, item.len());
-                                    self.state = State::Done;
-                                    Ready(Some(Err(Error::Logic)))
-                                } else if pp == item.len() {
+                                let ppp = MergeableTy::find_lowest_index_ge(&item, self.ts0);
+                                trace_transition!("partition_point  {ppp:?}  {n:?}", n = item.len());
+                                if let Some(pp) = ppp {
+                                    if pp == 0 {
+                                        // all entries are bulk
+                                        trace_transition!("transition with bulk to Bulk");
+                                        self.state = State::Bulk;
+                                        if let Some(before) = self.consume_buf_get_latest() {
+                                            self.out.push_back(item);
+                                            let item = Output::Before(before);
+                                            trace_emit!("State::Begin  Before  {}  emit {:?}", self.dbgname, item);
+                                            Ready(Some(Ok(item)))
+                                        } else {
+                                            let item = Output::Bulk(item);
+                                            trace_emit!("State::Begin  Bulk    {}  emit {:?}", self.dbgname, item);
+                                            Ready(Some(Ok(item)))
+                                        }
+                                    } else {
+                                        // mixed
+                                        trace_transition!("transition with mixed to Bulk");
+                                        self.state = State::Bulk;
+                                        match self.buf.as_mut() {
+                                            Some(buf) => match item.drain_into(buf, 0..pp) {
+                                                DrainIntoDstResult::Done => {
+                                                    if let Some(before) = self.consume_buf_get_latest() {
+                                                        self.out.push_back(item);
+                                                        let item = Output::Before(before);
+                                                        trace_emit!(
+                                                            "State::Begin  Before  {}  emit {:?}",
+                                                            self.dbgname,
+                                                            item
+                                                        );
+                                                        Ready(Some(Ok(item)))
+                                                    } else {
+                                                        let item = Output::Bulk(item);
+                                                        trace_emit!(
+                                                            "State::Begin  Bulk    {}  emit {:?}",
+                                                            self.dbgname,
+                                                            item
+                                                        );
+                                                        Ready(Some(Ok(item)))
+                                                    }
+                                                }
+                                                DrainIntoDstResult::Partial => panic!(),
+                                                DrainIntoDstResult::NotCompatible => panic!(),
+                                            },
+                                            None => match item.drain_into_new(0..pp) {
+                                                DrainIntoNewResult::Done(buf) => {
+                                                    self.buf = Some(buf);
+                                                    if let Some(before) = self.consume_buf_get_latest() {
+                                                        self.out.push_back(item);
+                                                        let item = Output::Before(before);
+                                                        trace_emit!(
+                                                            "State::Begin  Before  {}  emit {:?}",
+                                                            self.dbgname,
+                                                            item
+                                                        );
+                                                        Ready(Some(Ok(item)))
+                                                    } else {
+                                                        let item = Output::Bulk(item);
+                                                        trace_emit!(
+                                                            "State::Begin  Bulk    {}  emit {:?}",
+                                                            self.dbgname,
+                                                            item
+                                                        );
+                                                        Ready(Some(Ok(item)))
+                                                    }
+                                                }
+                                                DrainIntoNewResult::Partial(_) => panic!(),
+                                                DrainIntoNewResult::NotCompatible => panic!(),
+                                            },
+                                        }
+                                    }
+                                } else {
                                     // all entries are before, or empty item
                                     trace_transition!("stay in Begin");
                                     trace_emit!(
@@ -190,75 +254,6 @@ where
                                             DrainIntoNewResult::Done(buf) => {
                                                 self.buf = Some(buf);
                                                 continue;
-                                            }
-                                            DrainIntoNewResult::Partial(_) => panic!(),
-                                            DrainIntoNewResult::NotCompatible => panic!(),
-                                        },
-                                    }
-                                } else if pp == 0 {
-                                    // all entries are bulk
-                                    trace_transition!("transition with bulk to Bulk");
-                                    self.state = State::Bulk;
-                                    if let Some(before) = self.consume_buf_get_latest() {
-                                        self.out.push_back(item);
-                                        let item = Output::Before(before);
-                                        trace_emit!("State::Begin  Before  {}  emit {:?}", self.dbgname, item);
-                                        Ready(Some(Ok(item)))
-                                    } else {
-                                        let item = Output::Bulk(item);
-                                        trace_emit!("State::Begin  Bulk    {}  emit {:?}", self.dbgname, item);
-                                        Ready(Some(Ok(item)))
-                                    }
-                                } else {
-                                    // mixed
-                                    trace_transition!("transition with mixed to Bulk");
-                                    self.state = State::Bulk;
-                                    match self.buf.as_mut() {
-                                        Some(buf) => match item.drain_into(buf, 0..pp) {
-                                            DrainIntoDstResult::Done => {
-                                                if let Some(before) = self.consume_buf_get_latest() {
-                                                    self.out.push_back(item);
-                                                    let item = Output::Before(before);
-                                                    trace_emit!(
-                                                        "State::Begin  Before  {}  emit {:?}",
-                                                        self.dbgname,
-                                                        item
-                                                    );
-                                                    Ready(Some(Ok(item)))
-                                                } else {
-                                                    let item = Output::Bulk(item);
-                                                    trace_emit!(
-                                                        "State::Begin  Bulk    {}  emit {:?}",
-                                                        self.dbgname,
-                                                        item
-                                                    );
-                                                    Ready(Some(Ok(item)))
-                                                }
-                                            }
-                                            DrainIntoDstResult::Partial => panic!(),
-                                            DrainIntoDstResult::NotCompatible => panic!(),
-                                        },
-                                        None => match item.drain_into_new(0..pp) {
-                                            DrainIntoNewResult::Done(buf) => {
-                                                self.buf = Some(buf);
-                                                if let Some(before) = self.consume_buf_get_latest() {
-                                                    self.out.push_back(item);
-                                                    let item = Output::Before(before);
-                                                    trace_emit!(
-                                                        "State::Begin  Before  {}  emit {:?}",
-                                                        self.dbgname,
-                                                        item
-                                                    );
-                                                    Ready(Some(Ok(item)))
-                                                } else {
-                                                    let item = Output::Bulk(item);
-                                                    trace_emit!(
-                                                        "State::Begin  Bulk    {}  emit {:?}",
-                                                        self.dbgname,
-                                                        item
-                                                    );
-                                                    Ready(Some(Ok(item)))
-                                                }
                                             }
                                             DrainIntoNewResult::Partial(_) => panic!(),
                                             DrainIntoNewResult::NotCompatible => panic!(),
@@ -304,7 +299,7 @@ where
                                             self.tslast = MergeableTy::ts_max(&item).unwrap();
                                         }
                                     }
-                                    if item.verify() != true {
+                                    if item.is_consistent() == false {
                                         self.state = State::Done;
                                         let e = Error::Unordered;
                                         Ready(Some(Err(e)))
