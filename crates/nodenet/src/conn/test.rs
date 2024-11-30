@@ -4,6 +4,7 @@ use daqbuf_err as err;
 use err::Error;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_data;
+use items_0::streamitem::RangeCompletableItem;
 use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::streamitem::ERROR_FRAME_TYPE_ID;
@@ -102,8 +103,8 @@ fn raw_data_00() {
         let mut frames = InMemoryFrameStream::new(TcpReadAsBytes::new(netin), qu.inmem_bufcap());
         while let Some(frame) = frames.next().await {
             match frame {
-                Ok(frame) => match frame {
-                    StreamItem::DataItem(k) => {
+                Ok(x) => match x {
+                    StreamItem::DataItem(RangeCompletableItem::Data(k)) => {
                         eprintln!("{k:?}");
                         if k.tyid() == ITEMS_2_CHANNEL_EVENTS_FRAME_TYPE_ID {
                         } else if k.tyid() == ERROR_FRAME_TYPE_ID {
@@ -114,6 +115,10 @@ fn raw_data_00() {
                         }
                         let item: Sitemty<ChannelEvents> = decode_frame(&k).unwrap();
                         eprintln!("decoded: {:?}", item);
+                    }
+                    StreamItem::DataItem(RangeCompletableItem::RangeComplete) => {
+                        eprintln!("decoded: RangeComplete");
+                        todo!()
                     }
                     StreamItem::Log(_) => todo!(),
                     StreamItem::Stats(_) => todo!(),

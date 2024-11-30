@@ -87,8 +87,7 @@ where
         let inp = Box::pin(inp) as BoxedBytesStream;
         let frames = InMemoryFrameStream::new(inp, subq.inmem_bufcap());
         let frames = frames.map_err(sitem_err2_from_string);
-        let frames = Box::pin(frames);
-        let stream = EventsFromFrames::<T>::new(frames, addr);
+        let stream = EventsFromFrames::<T, _>::new(frames, addr);
         streams.push(Box::pin(stream) as _);
     }
     Ok(streams)

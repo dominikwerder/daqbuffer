@@ -8,6 +8,8 @@ use items_0::streamitem::Sitemty;
 use items_0::streamitem::StreamItem;
 use items_0::timebin::BinningggContainerEventsDyn;
 use items_0::WithLen;
+use items_2::binning::container_events::ContainerEvents;
+use items_2::binning::container_events::EventValueType;
 use items_2::empty::empty_events_dyn_ev;
 use items_2::eventfull::EventFull;
 use items_2::eventsdim0::EventsDim0;
@@ -16,6 +18,7 @@ use netpod::log::*;
 use netpod::AggKind;
 use netpod::ScalarType;
 use netpod::Shape;
+use netpod::TsNano;
 use std::marker::PhantomData;
 use std::mem;
 use std::pin::Pin;
@@ -176,9 +179,9 @@ where
     _m1: PhantomData<STY>,
 }
 
-impl<STY> ValueDim0FromBytesImpl<STY>
+impl<EVT> ValueDim0FromBytesImpl<EVT>
 where
-    STY: ScalarOps + ScalarValueFromBytes<STY>,
+    EVT: EventValueType + ScalarOps + ScalarValueFromBytes<EVT>,
 {
     fn boxed() -> Box<dyn ValueFromBytes> {
         Box::new(Self {
@@ -187,9 +190,9 @@ where
     }
 }
 
-impl<STY> ValueDim0FromBytes for ValueDim0FromBytesImpl<STY>
+impl<EVT> ValueDim0FromBytes for ValueDim0FromBytesImpl<EVT>
 where
-    STY: ScalarOps + ScalarValueFromBytes<STY>,
+    EVT: EventValueType + ScalarOps + ScalarValueFromBytes<EVT>,
 {
     fn convert(
         &self,
@@ -199,11 +202,9 @@ where
         endian: Endian,
         events: &mut dyn BinningggContainerEventsDyn,
     ) -> Result<(), Error> {
-        if let Some(evs) = events.as_any_mut().downcast_mut::<EventsDim0<STY>>() {
-            let v = <STY as ScalarValueFromBytes<STY>>::convert(buf, endian)?;
-            evs.values.push_back(v);
-            evs.tss.push_back(ts);
-            evs.pulses.push_back(pulse);
+        if let Some(evs) = events.as_any_mut().downcast_mut::<ContainerEvents<EVT>>() {
+            let v = <EVT as ScalarValueFromBytes<EVT>>::convert(buf, endian)?;
+            evs.push_back(TsNano::from_ns(ts), v);
             Ok(())
         } else {
             Err(Error::with_msg_no_trace("unexpected container"))
@@ -211,9 +212,9 @@ where
     }
 }
 
-impl<STY> ValueFromBytes for ValueDim0FromBytesImpl<STY>
+impl<EVT> ValueFromBytes for ValueDim0FromBytesImpl<EVT>
 where
-    STY: ScalarOps + ScalarValueFromBytes<STY>,
+    EVT: EventValueType + ScalarOps + ScalarValueFromBytes<EVT>,
 {
     fn convert(
         &self,
@@ -235,9 +236,10 @@ where
     _m1: PhantomData<STY>,
 }
 
-impl<STY> ValueDim1FromBytesImpl<STY>
+impl<EVT> ValueDim1FromBytesImpl<EVT>
 where
-    STY: ScalarOps + ScalarValueFromBytes<STY>,
+    EVT: EventValueType + ScalarOps + ScalarValueFromBytes<EVT>,
+    Vec<EVT>: EventValueType,
 {
     fn boxed(shape: Shape) -> Box<dyn ValueFromBytes> {
         Box::new(Self {
@@ -247,9 +249,10 @@ where
     }
 }
 
-impl<STY> ValueFromBytes for ValueDim1FromBytesImpl<STY>
+impl<EVT> ValueFromBytes for ValueDim1FromBytesImpl<EVT>
 where
-    STY: ScalarOps + ScalarValueFromBytes<STY>,
+    EVT: EventValueType + ScalarOps + ScalarValueFromBytes<EVT>,
+    Vec<EVT>: EventValueType,
 {
     fn convert(
         &self,
@@ -263,9 +266,10 @@ where
     }
 }
 
-impl<STY> ValueDim1FromBytes for ValueDim1FromBytesImpl<STY>
+impl<EVT> ValueDim1FromBytes for ValueDim1FromBytesImpl<EVT>
 where
-    STY: ScalarOps + ScalarValueFromBytes<STY>,
+    EVT: EventValueType + ScalarOps + ScalarValueFromBytes<EVT>,
+    Vec<EVT>: EventValueType,
 {
     fn convert(
         &self,
@@ -275,16 +279,17 @@ where
         endian: Endian,
         events: &mut dyn BinningggContainerEventsDyn,
     ) -> Result<(), Error> {
-        if let Some(evs) = events.as_any_mut().downcast_mut::<EventsDim1<STY>>() {
+        if let Some(evs) = events.as_any_mut().downcast_mut::<ContainerEvents<Vec<EVT>>>() {
             let n = if let Shape::Wave(n) = self.shape {
                 n
             } else {
                 return Err(Error::with_msg_no_trace("ValueDim1FromBytesImpl bad shape"));
             };
-            let v = <STY as ScalarValueFromBytes<STY>>::convert_dim1(buf, endian, n as _)?;
-            evs.values.push_back(v);
-            evs.tss.push_back(ts);
-            evs.pulses.push_back(pulse);
+            let v = <EVT as ScalarValueFromBytes<EVT>>::convert_dim1(buf, endian, n as _)?;
+            evs.push_back(TsNano::from_ns(ts), v);
+            // evs.values.push_back(v);
+            // evs.tss.push_back(ts);
+            // evs.pulses.push_back(pulse);
             Ok(())
         } else {
             Err(Error::with_msg_no_trace("unexpected container"))

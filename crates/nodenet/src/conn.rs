@@ -94,6 +94,7 @@ async fn make_channel_events_stream_data(
     scyqueue: Option<&ScyllaQueue>,
     ncc: &NodeConfigCached,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
+    // ) -> Result<impl Stream<Item = Sitemty<ChannelEvents>>, Error> {
     if subq.backend() == TEST_BACKEND {
         let node_count = ncc.node_config.cluster.nodes.len() as u64;
         let node_ix = ncc.ix as u64;
@@ -219,7 +220,7 @@ where
         .await
     {
         match k {
-            Ok(StreamItem::DataItem(item)) => {
+            Ok(StreamItem::DataItem(RangeCompletableItem::Data(item))) => {
                 frames.push(item);
             }
             Ok(item) => {
