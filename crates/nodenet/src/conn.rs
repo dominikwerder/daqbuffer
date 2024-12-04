@@ -52,7 +52,6 @@ pub enum Error {
     NotAvailable,
     DebugTest,
     Generator(#[from] streams::generators::Error),
-    Transform(#[from] streams::transform::Error),
     Framable(#[from] items_2::framable::Error),
     Frame(#[from] items_2::frame::Error),
     InMem(#[from] streams::frames::inmem::Error),
