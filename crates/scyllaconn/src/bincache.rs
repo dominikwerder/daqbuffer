@@ -46,7 +46,7 @@ pub async fn worker_write(
     stmts_cache: &StmtsCache,
     scy: &ScySession,
 ) -> Result<(), streams::timebin::cached::reader::Error> {
-    for (((((((&ts1, &ts2), &cnt), min), max), &avg), lst), &fnl) in bins.zip_iter() {
+    for (((((((&ts1, &ts2), &cnt), min), max), avg), lst), &fnl) in bins.zip_iter() {
         let bin_len = DtMs::from_ms_u64((ts2.ns() - ts1.ns()) / 1000000);
         let div = streams::timebin::cached::reader::part_len(bin_len).ns();
         let msp = ts1.ns() / div;

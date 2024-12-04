@@ -36,7 +36,7 @@ pub async fn scylla_channel_event_stream(
     chconf: ChConf,
     scyqueue: &ScyllaQueue,
 ) -> Result<Pin<Box<dyn Stream<Item = Sitemty<ChannelEvents>> + Send>>, Error> {
-    debug!("scylla_channel_event_stream  {evq:?}");
+    trace!("scylla_channel_event_stream  {evq:?}");
     // TODO depends in general on the query
     // TODO why both in PlainEventsQuery and as separate parameter? Check other usages.
     let _series = SeriesId::new(chconf.series());
