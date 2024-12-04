@@ -228,7 +228,7 @@ async fn binned_json_single(
             let ret = response(StatusCode::OK)
                 .header(CONTENT_TYPE, APP_JSON)
                 .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
-                .body(ToJsonBody::from(&item).into_body())?;
+                .body(ToJsonBody::from(item.into_bytes()).into_body())?;
             Ok(ret)
         }
         CollectResult::Timeout => {

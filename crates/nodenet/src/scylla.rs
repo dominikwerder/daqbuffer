@@ -71,7 +71,7 @@ pub async fn scylla_channel_event_stream(
                         type C2 = ContainerEvents<String>;
                         if let Some(j) = k.as_any_mut().downcast_mut::<C1>() {
                             let mut g = C2::new();
-                            for (&ts, val) in j.iter_zip() {
+                            for (ts, val) in j.iter_zip() {
                                 use netpod::channelstatus as cs2;
                                 let val = match cs2::ChannelStatus::from_kind(val as _) {
                                     Ok(x) => x.to_user_variant_string(),

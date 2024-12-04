@@ -253,7 +253,7 @@ async fn plain_events_json(
             let ret = response(StatusCode::OK)
                 .header(CONTENT_TYPE, APP_JSON)
                 .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
-                .body(ToJsonBody::from(&item).into_body())?;
+                .body(ToJsonBody::from(item.into_bytes()).into_body())?;
             debug!("{self_name}  response created");
             Ok(ret)
         }

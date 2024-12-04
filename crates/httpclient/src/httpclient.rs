@@ -181,6 +181,12 @@ pub struct ToJsonBody {
     body: Vec<u8>,
 }
 
+impl From<Vec<u8>> for ToJsonBody {
+    fn from(value: Vec<u8>) -> Self {
+        Self { body: value }
+    }
+}
+
 impl<S: Serialize> From<&S> for ToJsonBody {
     fn from(value: &S) -> Self {
         Self {
