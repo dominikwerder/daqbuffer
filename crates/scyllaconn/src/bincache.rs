@@ -1,6 +1,7 @@
 use crate::events2::prepare::StmtsCache;
 use crate::worker::ScyllaQueue;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::timebin::BinsBoxed;
 use items_2::binning::container_bins::ContainerBins;
 use netpod::DtMs;
@@ -63,7 +64,7 @@ pub async fn worker_write(
             lst,
         );
         // trace!("cache write {:?}", params);
-        scy.execute(stmts_cache.st_write_f32(), params)
+        scy.execute_unpaged(stmts_cache.st_write_f32(), params)
             .await
             .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
     }
@@ -90,10 +91,15 @@ pub async fn worker_read(
         .execute_iter(stmts_cache.st_read_f32().clone(), params)
         .await
         .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
-    let mut it = res.into_typed::<(i32, i64, f32, f32, f32, f32)>();
+    let mut it = res
+        .rows_stream::<(i32, i64, f32, f32, f32, f32)>()
+        .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
     let mut bins = ContainerBins::new();
-    while let Some(x) = it.next().await {
-        let row = x.map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?;
+    while let Some(row) = it
+        .try_next()
+        .await
+        .map_err(|e| streams::timebin::cached::reader::Error::Scylla(e.to_string()))?
+    {
         let off = row.0 as u64;
         let cnt = row.1 as u64;
         let min = row.2;

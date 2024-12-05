@@ -8,7 +8,7 @@ use err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
-use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
@@ -28,6 +28,7 @@ pub enum Error {
     Worker(Box<crate::worker::Error>),
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
     ScyllaRow(#[from] scylla::transport::iterator::NextRowError),
+    ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
 }
 
 impl From<crate::worker::Error> for Error {
@@ -331,9 +332,8 @@ async fn find_ts_msp_fwd(
     let mut res = scy
         .execute_iter(stmts.rt(rt).ts_msp_fwd().clone(), params)
         .await?
-        .into_typed::<(i64,)>();
-    while let Some(x) = res.next().await {
-        let row = x?;
+        .rows_stream::<(i64,)>()?;
+    while let Some(row) = res.try_next().await? {
         let ts = TsMs::from_ms_u64(row.0 as u64);
         ret.push_back(ts);
     }
@@ -352,9 +352,8 @@ async fn find_ts_msp_bck(
     let mut res = scy
         .execute_iter(stmts.rt(rt).ts_msp_bck().clone(), params)
         .await?
-        .into_typed::<(i64,)>();
-    while let Some(x) = res.next().await {
-        let row = x?;
+        .rows_stream::<(i64,)>()?;
+    while let Some(row) = res.try_next().await? {
         let ts = TsMs::from_ms_u64(row.0 as u64);
         ret.push_front(ts);
     }

@@ -1,9 +1,10 @@
 use crate::response;
 use crate::ServiceSharedResources;
-use core::fmt;
+use daqbuf_err::thiserror;
 use dbconn::create_connection;
 use dbconn::worker::PgQueue;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
@@ -40,161 +41,44 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
+#[cstm(name = "ChannelConfigError")]
 pub enum Error {
     NotFound(SfDbChannel),
-    ConfigQuorum(nodenet::configquorum::Error),
-    ConfigNode(nodenet::channelconfig::Error),
-    Http(crate::Error),
-    HttpCrate(http::Error),
+    ConfigQuorum(#[from] nodenet::configquorum::Error),
+    ConfigNode(#[from] nodenet::channelconfig::Error),
+    Http(#[from] crate::Error),
+    HttpCrate(#[from] http::Error),
     // TODO create dedicated error type for query parsing
-    BadQuery(daqbuf_err::Error),
+    BadQuery(#[from] daqbuf_err::Error),
     MissingBackend,
     MissingScalarType,
     MissingShape,
     MissingShapeKind,
     MissingEdge,
     MissingTimerange,
-    Uri(netpod::UriError),
+    Uri(#[from] netpod::UriError),
     ChannelConfigQuery(daqbuf_err::Error),
     ExpectScyllaBackend,
-    Pg(dbconn::pg::Error),
+    Pg(#[from] dbconn::pg::Error),
     Scylla(String),
     Join,
     OtherErr(daqbuf_err::Error),
-    PgWorker(dbconn::worker::Error),
-    Async(netpod::AsyncChannelError),
-    ChannelConfig(dbconn::channelconfig::Error),
-    Netpod(netpod::NetpodError),
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
-        let name = "HttpChannelConfigError";
-        write!(fmt, "{name}(")?;
-        match self {
-            Error::NotFound(chn) => write!(fmt, "NotFound({chn}")?,
-            Error::ConfigQuorum(e) => write!(fmt, "ConfigQuorum({e})")?,
-            Error::ConfigNode(e) => write!(fmt, "ConfigNode({e})")?,
-            Error::Http(e) => write!(fmt, "Http({e})")?,
-            Error::HttpCrate(e) => write!(fmt, "HttpCrate({e})")?,
-            Error::BadQuery(e) => write!(fmt, "BadQuery({e})")?,
-            Error::MissingBackend => write!(fmt, "MissingBackend")?,
-            Error::MissingScalarType => write!(fmt, "MissingScalarType")?,
-            Error::MissingShape => write!(fmt, "MissingShape")?,
-            Error::MissingShapeKind => write!(fmt, "MissingShapeKind")?,
-            Error::MissingEdge => write!(fmt, "MissingEdge")?,
-            Error::MissingTimerange => write!(fmt, "MissingTimerange")?,
-            Error::Uri(x) => write!(fmt, "Uri({x})")?,
-            Error::ChannelConfigQuery(e) => write!(fmt, "ChannelConfigQuery({e})")?,
-            Error::ExpectScyllaBackend => write!(fmt, "ExpectScyllaBackend")?,
-            Error::Pg(e) => write!(fmt, "Pg({e})")?,
-            Error::Scylla(e) => write!(fmt, "Scylla({e})")?,
-            Error::Join => write!(fmt, "Join")?,
-            Error::OtherErr(e) => write!(fmt, "OtherErr({e})")?,
-            Error::PgWorker(e) => write!(fmt, "PgWorker({e})")?,
-            Error::Async(e) => write!(fmt, "Async({e})")?,
-            Error::ChannelConfig(e) => write!(fmt, "ChannelConfig({e})")?,
-            Error::Netpod(e) => write!(fmt, "Netpod({e})")?,
-        }
-        write!(fmt, ")")?;
-        Ok(())
-    }
+    PgWorker(#[from] dbconn::worker::Error),
+    Async(#[from] netpod::AsyncChannelError),
+    ChannelConfig(#[from] dbconn::channelconfig::Error),
+    Netpod(#[from] netpod::NetpodError),
+    ScyllaQuery(#[from] scyllaconn::scylla::transport::errors::QueryError),
+    ScyllaTypeCheck(#[from] scyllaconn::scylla::deserialize::TypeCheckError),
 }
 
 fn other_err_error(e: daqbuf_err::Error) -> Error {
     Error::OtherErr(e)
 }
 
-impl std::error::Error for Error {}
-
-impl From<crate::Error> for Error {
-    fn from(e: crate::Error) -> Self {
-        Self::Http(e)
-    }
-}
-impl From<http::Error> for Error {
-    fn from(e: http::Error) -> Self {
-        Self::HttpCrate(e)
-    }
-}
-
-impl From<nodenet::configquorum::Error> for Error {
-    fn from(e: nodenet::configquorum::Error) -> Self {
-        use nodenet::configquorum::Error::*;
-        match e {
-            NotFound(a) => Self::NotFound(a),
-            _ => Self::ConfigQuorum(e),
-        }
-    }
-}
-
-impl From<nodenet::channelconfig::Error> for Error {
-    fn from(e: nodenet::channelconfig::Error) -> Self {
-        match e {
-            nodenet::channelconfig::Error::NotFoundChannel(a) => Self::NotFound(a),
-            _ => Self::ConfigNode(e),
-        }
-    }
-}
-
-impl From<netpod::UriError> for Error {
-    fn from(e: netpod::UriError) -> Self {
-        Self::Uri(e)
-    }
-}
-
-impl From<dbconn::pg::Error> for Error {
-    fn from(e: dbconn::pg::Error) -> Self {
-        Self::Pg(e)
-    }
-}
-
-impl From<dbconn::worker::Error> for Error {
-    fn from(e: dbconn::worker::Error) -> Self {
-        Self::PgWorker(e)
-    }
-}
-
-impl From<scyllaconn::scylla::cql_to_rust::FromRowError> for Error {
-    fn from(e: scyllaconn::scylla::cql_to_rust::FromRowError) -> Self {
-        Self::Scylla(e.to_string())
-    }
-}
-
-impl From<scyllaconn::scylla::transport::errors::QueryError> for Error {
-    fn from(e: scyllaconn::scylla::transport::errors::QueryError) -> Self {
-        Self::Scylla(e.to_string())
-    }
-}
-
-impl From<scyllaconn::scylla::transport::iterator::NextRowError> for Error {
-    fn from(e: scyllaconn::scylla::transport::iterator::NextRowError) -> Self {
-        Self::Scylla(e.to_string())
-    }
-}
-
 impl From<taskrun::tokio::task::JoinError> for Error {
     fn from(_e: taskrun::tokio::task::JoinError) -> Self {
         Self::Join
-    }
-}
-
-impl From<netpod::AsyncChannelError> for Error {
-    fn from(e: netpod::AsyncChannelError) -> Self {
-        Self::Async(e)
-    }
-}
-
-impl From<dbconn::channelconfig::Error> for Error {
-    fn from(e: dbconn::channelconfig::Error) -> Self {
-        Self::ChannelConfig(e)
-    }
-}
-
-impl From<netpod::NetpodError> for Error {
-    fn from(e: netpod::NetpodError) -> Self {
-        Self::Netpod(e)
     }
 }
 
@@ -623,11 +507,9 @@ impl ScyllaChannelsActive {
                 "select series from series_by_ts_msp where part = ? and ts_msp = ? and shape_kind = ? and scalar_type = ?",
                 (part as i32, tsedge as i32, q.shape_kind as i32, q.scalar_type.to_scylla_i32()),
             )
-            .await.map_err(|e| Error::Scylla(e.to_string()))?;
-            while let Some(row) = res.next().await {
-                let row = row?;
-                let (series,): (i64,) = row.into_typed()?;
-                ret.push(series as u64);
+            .await?.rows_stream::<(i64,)>()?;
+            while let Some(row) = res.try_next().await? {
+                ret.push(row.0 as u64);
             }
         }
         Ok(ret)
@@ -1005,17 +887,16 @@ impl GenerateScyllaTestData {
         let series: u64 = 42001;
         // TODO query `ts_msp` for all MSP values und use that to delete from event table first.
         // Only later delete also from the `ts_msp` table.
-        let it = scy
+        let mut it = scy
             .query_iter("select ts_msp from ts_msp where series = ?", (series as i64,))
-            .await?;
-        let mut it = it.into_typed::<(i64,)>();
-        while let Some(row) = it.next().await {
-            let row = row?;
+            .await?
+            .rows_stream::<(i64,)>()?;
+        while let Some(row) = it.try_next().await? {
             let values = (series as i64, row.0);
-            scy.query("delete from events_scalar_f64 where series = ? and ts_msp = ?", values)
+            scy.query_unpaged("delete from events_scalar_f64 where series = ? and ts_msp = ?", values)
                 .await?;
         }
-        scy.query("delete from ts_msp where series = ?", (series as i64,))
+        scy.query_unpaged("delete from ts_msp where series = ?", (series as i64,))
             .await?;
 
         // Generate
@@ -1023,7 +904,7 @@ impl GenerateScyllaTestData {
         let mut last = 0;
         for msp in msps.0.iter().map(|x| *x) {
             if msp != last {
-                scy.query(
+                scy.query_unpaged(
                     "insert into ts_msp (series, ts_msp) values (?, ?)",
                     (series as i64, msp as i64),
                 )
@@ -1032,7 +913,7 @@ impl GenerateScyllaTestData {
             last = msp;
         }
         for (((msp, lsp), pulse), val) in msps.0.into_iter().zip(lsps.0).zip(pulses.0).zip(vals.0) {
-            scy.query(
+            scy.query_unpaged(
                 "insert into events_scalar_f64 (series, ts_msp, ts_lsp, pulse, value) values (?, ?, ?, ?, ?)",
                 (series as i64, msp as i64, lsp as i64, pulse as i64, val),
             )

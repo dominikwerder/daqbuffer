@@ -4,6 +4,7 @@ use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
+use futures_util::TryStreamExt;
 use items_0::isodate::IsoDateTime;
 use items_0::Empty;
 use items_0::Extendable;
@@ -53,7 +54,7 @@ async fn read_next_status_events(
         let cql = concat!(
             "select ts_lsp, kind from channel_status where series = ? and ts_msp = ? and ts_lsp >= ? and ts_lsp < ?"
         );
-        scy.query(
+        scy.query_iter(
             cql,
             (series as i64, ts_msp as i64, ts_lsp_min as i64, ts_lsp_max as i64),
         )
@@ -73,14 +74,14 @@ async fn read_next_status_events(
         let cql = concat!(
             "select ts_lsp, kind from channel_status where series = ? and ts_msp = ? and ts_lsp < ? order by ts_lsp desc limit 1"
         );
-        scy.query(cql, (series as i64, ts_msp as i64, ts_lsp_max as i64))
+        scy.query_iter(cql, (series as i64, ts_msp as i64, ts_lsp_max as i64))
             .await
             .err_conv()?
     };
     let mut last_before = None;
     let mut ret = ChannelStatusEvents::empty();
-    for row in res.rows_typed_or_empty::<(i64, i32)>() {
-        let row = row.err_conv()?;
+    let mut it = res.rows_stream::<(i64, i32)>().err_conv()?;
+    while let Some(row) = it.try_next().await.err_conv()? {
         let ts = ts_msp + row.0 as u64;
         let kind = row.1 as u32;
         let datetime = IsoDateTime::from_unix_millis(ts / MS);

@@ -12,6 +12,7 @@ use chrono::Utc;
 use futures_util::stream::FuturesOrdered;
 use futures_util::stream::FuturesUnordered;
 use futures_util::FutureExt;
+use futures_util::TryStreamExt;
 use http::header;
 use http::Method;
 use http::StatusCode;
@@ -904,7 +905,7 @@ impl<T> ErrConv<T> for Result<T, scylla::transport::errors::QueryError> {
     }
 }
 
-impl<T> ErrConv<T> for Result<T, scylla::transport::query_result::RowsExpectedError> {
+impl<T> ErrConv<T> for Result<T, scylla::deserialize::TypeCheckError> {
     fn err_conv(self) -> Result<T, daqbuf_err::Error> {
         self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
     }
@@ -940,23 +941,21 @@ impl MapPulseScyllaHandler {
         let scy = scyllaconn::conn::create_scy_session(&scyconf).await?;
         let pulse_a = (pulse >> 14) as i64;
         let pulse_b = (pulse & 0x3fff) as i32;
-        let res = scy
-            .query(
+        let mut it = scy
+            .query_iter(
                 "select ts_a, ts_b from pulse where pulse_a = ? and pulse_b = ?",
                 (pulse_a, pulse_b),
             )
             .await
+            .err_conv()?
+            .rows_stream::<(i64, i32)>()
             .err_conv()?;
-        let rows = res.rows().err_conv()?;
         let ch = "pulsemaptable";
         let mut tss = Vec::new();
         let mut channels = Vec::new();
-        use scylla::frame::response::result::CqlValue;
-        let ts_a_def = CqlValue::BigInt(0);
-        let ts_b_def = CqlValue::Int(0);
-        for row in rows {
-            let ts_a = row.columns[0].as_ref().unwrap_or(&ts_a_def).as_bigint().unwrap_or(0) as u64;
-            let ts_b = row.columns[1].as_ref().unwrap_or(&ts_b_def).as_int().unwrap_or(0) as u32 as u64;
+        while let Some(row) = it.try_next().await.err_conv()? {
+            let ts_a = row.0 as u64;
+            let ts_b = row.1 as u64;
             tss.push(ts_a * netpod::timeunits::SEC + ts_b);
             channels.push(ch.into());
         }

@@ -19,6 +19,6 @@ pub async fn schema(rt: RetentionTime, scyco: &ScyllaConfig, scy: &ScySession) -
         rt.table_prefix(),
         table
     );
-    let _ = scy.query(cql, ()).await;
+    let _ = scy.query_unpaged(cql, ()).await;
     Ok(())
 }

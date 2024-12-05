@@ -466,12 +466,7 @@ impl Stream for EventsStreamRt {
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        let mut i = 0usize;
         loop {
-            i += 1;
-            if i > 500000000000 {
-                panic!("too many iterations")
-            }
             if let Some(mut item) = self.out.pop_front() {
                 if item.is_consistent() == false {
                     warn_item!("{}bad item {:?}", "\n\n--------------------------\n", item);

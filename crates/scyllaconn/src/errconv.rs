@@ -3,7 +3,6 @@ use err::Error;
 use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::NewSessionError as ScyNewSessionError;
 use scylla::transport::errors::QueryError as ScyQueryError;
-use scylla::transport::query_result::RowsExpectedError;
 
 pub trait ErrConv<T> {
     fn err_conv(self) -> Result<T, Error>;
@@ -44,7 +43,7 @@ impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
     }
 }
 
-impl<T> ErrConv<T> for Result<T, RowsExpectedError> {
+impl<T> ErrConv<T> for Result<T, scylla::deserialize::TypeCheckError> {
     fn err_conv(self) -> Result<T, Error> {
         match self {
             Ok(k) => Ok(k),

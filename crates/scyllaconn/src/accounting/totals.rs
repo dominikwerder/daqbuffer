@@ -4,7 +4,7 @@ use err::Error;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
-use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::Empty;
 use items_0::Extendable;
 use items_0::WithLen;
@@ -36,12 +36,12 @@ async fn read_next(
             scy.execute_iter(qu.clone(), (part as i32, ts_msp as i64))
                 .await
                 .err_conv()?
-                .into_typed::<RowType>()
+                .rows_stream::<RowType>()
+                .err_conv()?
         } else {
             return Err(Error::with_msg_no_trace("no backward support"));
         };
-        while let Some(row) = res.next().await {
-            let row = row.map_err(Error::from_string)?;
+        while let Some(row) = res.try_next().await.err_conv()? {
             let _ts = ts_msp;
             let _series = row.0 as u64;
             let count = row.1 as u64;

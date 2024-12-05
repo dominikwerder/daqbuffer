@@ -2,6 +2,7 @@ use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
@@ -14,6 +15,7 @@ use scylla::Session as ScySession;
 pub enum Error {
     ScyllaQuery(#[from] scylla::transport::errors::QueryError),
     ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+    ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
     UsageDataMalformed,
 }
 
@@ -118,9 +120,8 @@ async fn read_ts_inner(ks: &str, rt: RetentionTime, ts: TsMs, scy: &ScySession) 
         let mut res = scy
             .execute_iter(qu.clone(), (part as i32, ts_sec))
             .await?
-            .into_typed::<RowType>();
-        while let Some(row) = res.next().await {
-            let row = row?;
+            .rows_stream::<RowType>()?;
+        while let Some(row) = res.try_next().await? {
             let series = row.0 as u64;
             let count = row.1 as u64;
             let bytes = row.2 as u64;
