@@ -12,6 +12,10 @@ pub mod worker;
 pub use daqbuf_series::SeriesId;
 pub use scylla;
 
+mod log {
+    pub use netpod::log::*;
+}
+
 pub async fn test_log() {
     use netpod::log::*;
     error!("------");

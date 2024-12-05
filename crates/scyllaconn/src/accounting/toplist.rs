@@ -1,23 +1,23 @@
+use crate::log::*;
 use daqbuf_err as err;
 use err::thiserror;
 use err::ThisError;
-use futures_util::StreamExt;
 use futures_util::TryStreamExt;
-use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
 use netpod::EMIT_ACCOUNTING_SNAP;
 use scylla::prepared_statement::PreparedStatement;
 use scylla::Session as ScySession;
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "AccountingToplist")]
-pub enum Error {
-    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-    ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
-    ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
-    UsageDataMalformed,
-}
+autoerr::create_error_v1!(
+    name(Error, "AccountingToplist"),
+    enum variants {
+        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+        ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
+        UsageDataMalformed,
+    },
+);
 
 #[derive(Debug)]
 pub struct UsageData {
@@ -103,6 +103,7 @@ pub async fn read_ts(ks: &str, rt: RetentionTime, ts: TsMs, scy: &ScySession) ->
 }
 
 async fn read_ts_inner(ks: &str, rt: RetentionTime, ts: TsMs, scy: &ScySession) -> Result<UsageData, Error> {
+    trace!("read_ts_inner");
     type RowType = (i64, i64, i64);
     let cql = format!(
         concat!(
