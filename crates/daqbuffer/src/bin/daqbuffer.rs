@@ -81,13 +81,13 @@ async fn go() -> Result<(), Error> {
             config_file.read_to_end(&mut buf).await?;
             if let Ok(cfg) = serde_json::from_slice::<NodeConfig>(b"nothing") {
                 info!("Parsed json config from {}", subcmd.config);
-                let cfg: Result<NodeConfigCached, Error> = cfg.into();
-                let cfg = cfg?;
+                let cfg: Result<NodeConfigCached, netpod::Error> = cfg.into();
+                let cfg = cfg.map_err(Error::from_string)?;
                 daqbufp2::run_node(cfg, service_version).await?;
             } else if let Ok(cfg) = serde_yaml::from_slice::<NodeConfig>(&buf) {
                 info!("Parsed yaml config from {}", subcmd.config);
-                let cfg: Result<NodeConfigCached, Error> = cfg.into();
-                let cfg = cfg?;
+                let cfg: Result<NodeConfigCached, netpod::Error> = cfg.into();
+                let cfg = cfg.map_err(Error::from_string)?;
                 daqbufp2::run_node(cfg, service_version).await?;
             } else {
                 return Err(Error::with_msg_no_trace(format!(
@@ -114,7 +114,7 @@ async fn go() -> Result<(), Error> {
             ClientType::Binned(opts) => {
                 let beg = parse_ts(&opts.beg)?;
                 let end = parse_ts(&opts.end)?;
-                let cache_usage = CacheUsage::from_string(&opts.cache)?;
+                let cache_usage = CacheUsage::from_string(&opts.cache).map_err(Error::from_string)?;
                 daqbufp2::client::get_binned(
                     opts.host,
                     opts.port,

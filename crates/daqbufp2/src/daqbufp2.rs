@@ -26,7 +26,7 @@ pub fn spawn_test_hosts(cluster: Cluster) -> Vec<JoinHandle<Result<(), Error>>> 
             cluster: cluster.clone(),
             name: format!("{}:{}", node.host, node.port),
         };
-        let node_config: Result<NodeConfigCached, Error> = node_config.into();
+        let node_config: Result<NodeConfigCached, netpod::Error> = node_config.into();
         let node_config = node_config.unwrap();
         let h = tokio::spawn(httpret::host(node_config, service_version.clone()).map_err(Error::from));
         ret.push(h);

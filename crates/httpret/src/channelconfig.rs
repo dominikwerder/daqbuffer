@@ -57,6 +57,7 @@ pub enum Error {
     MissingShapeKind,
     MissingEdge,
     MissingTimerange,
+    MissingChannelName,
     Uri(#[from] netpod::UriError),
     ChannelConfigQuery(daqbuf_err::Error),
     ExpectScyllaBackend,
@@ -67,7 +68,7 @@ pub enum Error {
     PgWorker(#[from] dbconn::worker::Error),
     Async(#[from] netpod::AsyncChannelError),
     ChannelConfig(#[from] dbconn::channelconfig::Error),
-    Netpod(#[from] netpod::NetpodError),
+    Netpod(#[from] netpod::Error),
     ScyllaQuery(#[from] scyllaconn::scylla::transport::errors::QueryError),
     ScyllaTypeCheck(#[from] scyllaconn::scylla::deserialize::TypeCheckError),
 }
@@ -330,7 +331,7 @@ pub struct ChannelsWithTypeQuery {
 }
 
 impl FromUrl for ChannelsWithTypeQuery {
-    type Error = daqbuf_err::Error;
+    type Error = Error;
 
     fn from_url(url: &Url) -> Result<Self, Self::Error> {
         let pairs = get_url_query_pairs(url);
@@ -338,14 +339,11 @@ impl FromUrl for ChannelsWithTypeQuery {
     }
 
     fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Self::Error> {
-        let s = pairs
-            .get("scalar_type")
-            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing scalar_type"))?;
+        let s = pairs.get("scalar_type").ok_or_else(|| Error::MissingScalarType)?;
         //let scalar_type = ScalarType::from_bsread_str(s)?;
-        let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
-        let s = pairs
-            .get("shape")
-            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing shape"))?;
+        let scalar_type: ScalarType =
+            serde_json::from_str(&format!("\"{s}\"")).map_err(|_| Error::MissingScalarType)?;
+        let s = pairs.get("shape").ok_or_else(|| Error::MissingShape)?;
         let shape = Shape::from_dims_str(s)?;
         Ok(Self { scalar_type, shape })
     }
@@ -368,29 +366,23 @@ fn bool_false(x: &bool) -> bool {
 }
 
 impl FromUrl for ScyllaChannelEventSeriesIdQuery {
-    type Error = daqbuf_err::Error;
+    type Error = Error;
 
-    fn from_url(url: &Url) -> Result<Self, daqbuf_err::Error> {
+    fn from_url(url: &Url) -> Result<Self, Error> {
         let pairs = get_url_query_pairs(url);
         Self::from_pairs(&pairs)
     }
 
-    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, daqbuf_err::Error> {
-        let backend = pairs
-            .get("backend")
-            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing backend"))?
-            .into();
+    fn from_pairs(pairs: &BTreeMap<String, String>) -> Result<Self, Error> {
+        let backend = pairs.get("backend").ok_or_else(|| Error::MissingBackend)?.into();
         let name = pairs
             .get("channelName")
-            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing channelName"))?
+            .ok_or_else(|| Error::MissingChannelName)?
             .into();
-        let s = pairs
-            .get("scalarType")
-            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing scalarType"))?;
-        let scalar_type: ScalarType = serde_json::from_str(&format!("\"{s}\""))?;
-        let s = pairs
-            .get("shape")
-            .ok_or_else(|| daqbuf_err::Error::with_public_msg_no_trace("missing shape"))?;
+        let s = pairs.get("scalarType").ok_or_else(|| Error::MissingScalarType)?;
+        let scalar_type: ScalarType =
+            serde_json::from_str(&format!("\"{s}\"")).map_err(|_| Error::MissingScalarType)?;
+        let s = pairs.get("shape").ok_or_else(|| Error::MissingShape)?;
         let shape = Shape::from_dims_str(s)?;
         let do_create = pairs.get("doCreate").map_or("false", |x| x.as_str()) == "true";
         Ok(Self {
@@ -809,7 +801,7 @@ impl AmbigiousChannelNames {
                 series: row.get::<_, i64>(0) as u64,
                 name: row.get(1),
                 scalar_type: ScalarType::from_scylla_i32(row.get(2))?,
-                shape: Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3)).map_err(other_err_error)?,
+                shape: Shape::from_scylla_shape_dims(&row.get::<_, Vec<i32>>(3))?,
             };
             ret.ambigious.push(g);
         }

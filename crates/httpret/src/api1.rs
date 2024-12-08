@@ -828,7 +828,7 @@ impl Stream for DataApiPython3DataStream {
                                 self.current_fetch_info = None;
                                 self.data_done = true;
                                 let mut sb = crate::status_board().unwrap();
-                                sb.add_error(self.ctx.reqid_this(), e.0.clone());
+                                sb.add_error(self.ctx.reqid_this(), e.0.to_string());
                                 Ready(Some(Err(e)))
                             }
                         },

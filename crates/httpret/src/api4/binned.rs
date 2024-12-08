@@ -156,25 +156,25 @@ fn make_read_provider(
             .clone()
             .map(|qu| ScyllaEventReadProvider::new(qu))
             .map(|x| Arc::new(x) as Arc<dyn EventsReadProvider>)
-            .expect("expect scylla queue")
+            .expect("scylla queue")
     } else if ncc.node.sf_databuffer.is_some() {
         // TODO do not clone the request. Pass an Arc up to here.
         let x = SfDatabufferEventReadProvider::new(Arc::new(ctx.clone()), open_bytes);
         Arc::new(x)
     } else {
-        panic!()
+        panic!("unexpected backend")
     };
     let cache_read_provider = if ncc.node_config.cluster.scylla_lt().is_some() {
         scyqueue
             .clone()
             .map(|qu| ScyllaCacheReadProvider::new(qu))
             .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>)
-            .expect("expect scylla queue")
+            .expect("scylla queue")
     } else if ncc.node.sf_databuffer.is_some() {
         let x = DummyCacheReadProvider::new();
         Arc::new(x)
     } else {
-        panic!()
+        panic!("unexpected backend")
     };
     (events_read_provider, cache_read_provider)
 }

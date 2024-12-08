@@ -233,14 +233,15 @@ impl StatusNodesRecursive {
             for (tag, sr) in all {
                 match sr {
                     Ok(sr) => {
-                        let s: Result<NodeStatus, _> = serde_json::from_value(sr.val).map_err(daqbuf_err::Error::from);
+                        let s: Result<NodeStatus, _> =
+                            serde_json::from_value(sr.val).map_err(|e| netpod::NodeStatusSubError::Msg(e.to_string()));
                         let sub = NodeStatusSub { url: tag.0, status: s };
                         subs.push_back(sub);
                     }
                     Err(e) => {
                         let sub = NodeStatusSub {
                             url: tag.0,
-                            status: Err(daqbuf_err::Error::from(e)),
+                            status: Err(netpod::NodeStatusSubError::Msg(e.to_string())),
                         };
                         subs.push_back(sub);
                     }

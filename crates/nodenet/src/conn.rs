@@ -56,6 +56,7 @@ pub enum Error {
     Frame(#[from] items_2::frame::Error),
     InMem(#[from] streams::frames::inmem::Error),
     FramedStream(#[from] streams::frames::Error),
+    Netpod(#[from] netpod::Error),
 }
 
 pub async fn events_service(ncc: NodeConfigCached) -> Result<(), Error> {

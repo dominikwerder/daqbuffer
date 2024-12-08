@@ -61,7 +61,11 @@ fn events_f64_plain() -> Result<(), Error> {
         let node = &cluster.nodes[0];
         let url: Url = format!("http://{}:{}/api/1/query", node.host, node.port).parse()?;
         let accept = APP_OCTET;
-        let range = Api1Range::new("1970-01-01T00:00:00Z".try_into()?, "1970-01-01T00:01:00Z".try_into()?)?;
+        let range = Api1Range::new(
+            "1970-01-01T00:00:00Z".try_into().map_err(Error::from_string)?,
+            "1970-01-01T00:01:00Z".try_into().map_err(Error::from_string)?,
+        )
+        .map_err(Error::from_string)?;
         // TODO the channel list needs to get pre-processed to check for backend prefix!
         let ch = ChannelTuple::new(TEST_BACKEND.into(), "test-gen-i32-dim0-v01".into());
         let qu = Api1Query::new(range, vec![ch]);

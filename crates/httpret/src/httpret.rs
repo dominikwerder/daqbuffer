@@ -78,7 +78,7 @@ pub enum RetrievalError {
     #[serde(skip)]
     Url(#[from] url::ParseError),
     #[serde(skip)]
-    Netpod(#[from] netpod::NetpodError),
+    Netpod(#[from] netpod::Error),
 }
 
 trait IntoBoxedError: std::error::Error {}
