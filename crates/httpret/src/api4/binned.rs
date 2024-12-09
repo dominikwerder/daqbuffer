@@ -32,7 +32,6 @@ use netpod::HEADER_NAME_REQUEST_ID;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use nodenet::scylla::ScyllaEventReadProvider;
 use query::api4::binned::BinnedQuery;
-use scyllaconn::bincache::ScyllaCacheReadProvider;
 use scyllaconn::worker::ScyllaQueue;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -167,7 +166,7 @@ fn make_read_provider(
     let cache_read_provider = if ncc.node_config.cluster.scylla_lt().is_some() {
         scyqueue
             .clone()
-            .map(|qu| ScyllaCacheReadProvider::new(qu))
+            .map(|qu| scyllaconn::bincache::ScyllaPrebinnedReadProvider::new(qu))
             .map(|x| Arc::new(x) as Arc<dyn CacheReadProvider>)
             .expect("scylla queue")
     } else if ncc.node.sf_databuffer.is_some() {

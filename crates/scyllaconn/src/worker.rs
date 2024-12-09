@@ -1,13 +1,10 @@
 use crate::conn::create_scy_session_no_ks;
 use crate::events::ReadJobTrace;
-use crate::events2::prepare::StmtsCache;
 use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
 use daqbuf_err as err;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Future;
 use futures_util::StreamExt;
 use items_0::timebin::BinningggContainerEventsDyn;
@@ -23,24 +20,29 @@ use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "ScyllaWorker")]
-pub enum Error {
-    ScyllaConnection(err::Error),
-    Prepare(#[from] crate::events2::prepare::Error),
-    EventsQuery(#[from] crate::events::Error),
-    Msp(#[from] crate::events2::msp::Error),
-    ChannelSend,
-    ChannelRecv,
-    Join,
-    Toplist(#[from] crate::accounting::toplist::Error),
-    MissingKeyspaceConfig,
-    CacheWriteF32(#[from] streams::timebin::cached::reader::Error),
-    Schema(#[from] crate::schema::Error),
-}
+const CONCURRENT_QUERIES_PER_WORKER: usize = 80;
+const SCYLLA_WORKER_QUEUE_LEN: usize = 200;
+
+autoerr::create_error_v1!(
+    name(Error, "ScyllaWorker"),
+    enum variants {
+        ScyllaConnection(err::Error),
+        Prepare(#[from] crate::events2::prepare::Error),
+        EventsQuery(#[from] crate::events::Error),
+        Msp(#[from] crate::events2::msp::Error),
+        ChannelSend,
+        ChannelRecv,
+        Join,
+        Toplist(#[from] crate::accounting::toplist::Error),
+        MissingKeyspaceConfig,
+        CacheWriteF32(#[from] streams::timebin::cached::reader::Error),
+        Schema(#[from] crate::schema::Error),
+    },
+);
 
 #[derive(Debug)]
-struct ReadCacheF32 {
+struct ReadPrebinnedF32 {
+    rt: RetentionTime,
     series: u64,
     bin_len: DtMs,
     msp: u64,
@@ -69,7 +71,7 @@ enum Job {
         ContainerBins<f32, f32>,
         Sender<Result<(), streams::timebin::cached::reader::Error>>,
     ),
-    ReadCacheF32(ReadCacheF32),
+    ReadPrebinnedF32(ReadPrebinnedF32),
 }
 
 struct ReadNextValues {
@@ -168,15 +170,17 @@ impl ScyllaQueue {
         Ok(res)
     }
 
-    pub async fn read_cache_f32(
+    pub async fn read_prebinned_f32(
         &self,
+        rt: RetentionTime,
         series: u64,
         bin_len: DtMs,
         msp: u64,
         offs: core::ops::Range<u32>,
     ) -> Result<ContainerBins<f32, f32>, streams::timebin::cached::reader::Error> {
         let (tx, rx) = async_channel::bounded(1);
-        let job = Job::ReadCacheF32(ReadCacheF32 {
+        let job = Job::ReadPrebinnedF32(ReadPrebinnedF32 {
+            rt,
             series,
             bin_len,
             msp,
@@ -209,7 +213,7 @@ impl ScyllaWorker {
         scyconf_mt: ScyllaConfig,
         scyconf_lt: ScyllaConfig,
     ) -> Result<(ScyllaQueue, Self), Error> {
-        let (tx, rx) = async_channel::bounded(200);
+        let (tx, rx) = async_channel::bounded(SCYLLA_WORKER_QUEUE_LEN);
         let queue = ScyllaQueue { tx };
         let worker = Self {
             rx,
@@ -236,8 +240,8 @@ impl ScyllaWorker {
         debug!("scylla worker  prepare start");
         let stmts = StmtsEvents::new(kss.try_into().map_err(|_| Error::MissingKeyspaceConfig)?, &scy).await?;
         let stmts = Arc::new(stmts);
-        let stmts_cache = StmtsCache::new(kss[0], &scy).await?;
-        let stmts_cache = Arc::new(stmts_cache);
+        // let stmts_cache = StmtsCache::new(kss[0], &scy).await?;
+        // let stmts_cache = Arc::new(stmts_cache);
         debug!("scylla worker  prepare done");
         self.rx
             .map(|job| async {
@@ -266,19 +270,21 @@ impl ScyllaWorker {
                             // TODO count for stats
                         }
                     }
-                    Job::WriteCacheF32(series, bins, tx) => {
-                        let res = super::bincache::worker_write(series, bins, &stmts_cache, &scy).await;
+                    Job::WriteCacheF32(_, _, tx) => {
+                        // let res = super::bincache::worker_write(series, bins, &stmts_cache, &scy).await;
+                        let res = Err(streams::timebin::cached::reader::Error::TodoImpl);
                         if tx.send(res).await.is_err() {
                             // TODO count for stats
                         }
                     }
-                    Job::ReadCacheF32(job) => {
+                    Job::ReadPrebinnedF32(job) => {
                         let res = super::bincache::worker_read(
+                            job.rt,
                             job.series,
                             job.bin_len,
                             job.msp,
                             job.offs,
-                            &stmts_cache,
+                            &stmts,
                             &scy,
                         )
                         .await;
@@ -288,7 +294,7 @@ impl ScyllaWorker {
                     }
                 }
             })
-            .buffer_unordered(80)
+            .buffer_unordered(CONCURRENT_QUERIES_PER_WORKER)
             .for_each(|_| futures_util::future::ready(()))
             .await;
         info!("scylla worker finished");
