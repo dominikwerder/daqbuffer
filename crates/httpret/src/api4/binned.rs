@@ -1,5 +1,6 @@
 use crate::bodystream::response;
 use crate::channelconfig::ch_conf_from_binned;
+use crate::requests::accepts_cbor_framed;
 use crate::requests::accepts_json_framed;
 use crate::requests::accepts_json_or_all;
 use crate::requests::accepts_octets;
@@ -26,6 +27,7 @@ use netpod::timeunits::SEC;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
+use netpod::APP_CBOR_FRAMED;
 use netpod::APP_JSON;
 use netpod::APP_JSON_FRAMED;
 use netpod::HEADER_NAME_REQUEST_ID;
@@ -38,7 +40,6 @@ use std::sync::Arc;
 use streams::collect::CollectResult;
 use streams::eventsplainreader::DummyCacheReadProvider;
 use streams::eventsplainreader::SfDatabufferEventReadProvider;
-use streams::lenframe::bytes_chunks_to_len_framed_str;
 use streams::timebin::cached::reader::EventsReadProvider;
 use streams::timebin::CacheReadProvider;
 use tracing::Instrument;
@@ -125,7 +126,9 @@ async fn binned(
     {
         Err(Error::ServerError)?;
     }
-    if accepts_json_framed(req.headers()) {
+    if accepts_cbor_framed(req.headers()) {
+        Ok(binned_cbor_framed(url, req, ctx, pgqueue, scyqueue, ncc).await?)
+    } else if accepts_json_framed(req.headers()) {
         Ok(binned_json_framed(url, req, ctx, pgqueue, scyqueue, ncc).await?)
     } else if accepts_json_or_all(req.headers()) {
         Ok(binned_json_single(url, req, ctx, pgqueue, scyqueue, ncc).await?)
@@ -253,7 +256,7 @@ async fn binned_json_framed(
     let reqid = crate::status_board().map_err(|_e| Error::ServerError)?.new_status_id();
     let (_head, _body) = req.into_parts();
     let query = BinnedQuery::from_url(&url).map_err(|e| {
-        error!("binned_json: {e:?}");
+        error!("binned_json_framed: {e:?}");
         Error::BadQuery(e.to_string())
     })?;
     // TODO handle None case better and return 404
@@ -285,9 +288,61 @@ async fn binned_json_framed(
     )
     .instrument(span1)
     .await?;
-    let stream = bytes_chunks_to_len_framed_str(stream);
+    let stream = streams::lenframe::bytes_chunks_to_len_framed_str(stream);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_JSON_FRAMED)
+        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .body(body_stream(stream))?;
+    Ok(ret)
+}
+
+async fn binned_cbor_framed(
+    url: Url,
+    req: Requ,
+    ctx: &ReqCtx,
+    pgqueue: &PgQueue,
+    scyqueue: Option<ScyllaQueue>,
+    ncc: &NodeConfigCached,
+) -> Result<StreamResponse, Error> {
+    debug!("binned_cbor_framed  {:?}", req);
+    let reqid = crate::status_board().map_err(|_e| Error::ServerError)?.new_status_id();
+    let (_head, _body) = req.into_parts();
+    let query = BinnedQuery::from_url(&url).map_err(|e| {
+        error!("binned_cbor_framed: {e:?}");
+        Error::BadQuery(e.to_string())
+    })?;
+    // TODO handle None case better and return 404
+    let ch_conf = ch_conf_from_binned(&query, ctx, pgqueue, ncc)
+        .await?
+        .ok_or_else(|| Error::ChannelNotFound)?;
+    let span1 = span!(
+        Level::INFO,
+        "httpret::binned_cbor_framed",
+        reqid,
+        beg = query.range().beg_u64() / SEC,
+        end = query.range().end_u64() / SEC,
+        ch = query.channel().name(),
+    );
+    span1.in_scope(|| {
+        debug!("begin");
+    });
+    let open_bytes = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
+    let (events_read_provider, cache_read_provider) =
+        make_read_provider(ch_conf.name(), scyqueue, open_bytes, ctx, ncc);
+    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
+    let stream = streams::timebinnedjson::timebinned_cbor_framed(
+        query,
+        ch_conf,
+        ctx,
+        cache_read_provider,
+        events_read_provider,
+        timeout_provider,
+    )
+    .instrument(span1)
+    .await?;
+    let stream = streams::lenframe::bytes_chunks_to_framed(stream);
+    let ret = response(StatusCode::OK)
+        .header(CONTENT_TYPE, APP_CBOR_FRAMED)
         .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
         .body(body_stream(stream))?;
     Ok(ret)

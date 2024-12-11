@@ -20,6 +20,7 @@ use netpod::req_uri_to_url;
 use netpod::ttl::RetentionTime;
 use netpod::FromUrl;
 use netpod::NodeConfigCached;
+use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
 use query::api4::AccountingIngestedBytesQuery;
@@ -27,6 +28,71 @@ use query::api4::AccountingToplistQuery;
 use scyllaconn::accounting::toplist::UsageData;
 use serde::Deserialize;
 use serde::Serialize;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AccountedIngested {
+    names: Vec<String>,
+    counts: Vec<u64>,
+    bytes: Vec<u64>,
+    scalar_types: Vec<ScalarType>,
+    shapes: Vec<Shape>,
+}
+
+impl AccountedIngested {
+    fn new() -> Self {
+        Self {
+            names: Vec::new(),
+            counts: Vec::new(),
+            bytes: Vec::new(),
+            scalar_types: Vec::new(),
+            shapes: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, name: String, counts: u64, bytes: u64, scalar_type: ScalarType, shape: Shape) {
+        self.names.push(name);
+        self.counts.push(counts);
+        self.bytes.push(bytes);
+        self.scalar_types.push(scalar_type);
+        self.shapes.push(shape);
+    }
+
+    fn sort_by_counts(&mut self) {
+        let mut tmp: Vec<_> = self
+            .counts
+            .iter()
+            .map(|&x| x)
+            .enumerate()
+            .map(|(i, x)| (x, i))
+            .collect();
+        tmp.sort_unstable();
+        let tmp: Vec<_> = tmp.into_iter().rev().map(|x| x.1).collect();
+        self.reorder_by_index_list(&tmp);
+    }
+
+    fn sort_by_bytes(&mut self) {
+        let mut tmp: Vec<_> = self.bytes.iter().map(|&x| x).enumerate().map(|(i, x)| (x, i)).collect();
+        tmp.sort_unstable();
+        let tmp: Vec<_> = tmp.into_iter().rev().map(|x| x.1).collect();
+        self.reorder_by_index_list(&tmp);
+    }
+
+    fn reorder_by_index_list(&mut self, tmp: &[usize]) {
+        self.names = tmp.iter().map(|&x| self.names[x].clone()).collect();
+        self.counts = tmp.iter().map(|&x| self.counts[x]).collect();
+        self.bytes = tmp.iter().map(|&x| self.bytes[x]).collect();
+        self.scalar_types = tmp.iter().map(|&x| self.scalar_types[x].clone()).collect();
+        self.shapes = tmp.iter().map(|&x| self.shapes[x].clone()).collect();
+    }
+
+    fn truncate(&mut self, len: usize) {
+        self.names.truncate(len);
+        self.counts.truncate(len);
+        self.bytes.truncate(len);
+        self.scalar_types.truncate(len);
+        self.shapes.truncate(len);
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Toplist {
@@ -54,61 +120,6 @@ impl Toplist {
             found: 0,
             mismatch_count: 0,
         }
-    }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct AccountedIngested {
-    names: Vec<String>,
-    counts: Vec<u64>,
-    bytes: Vec<u64>,
-}
-
-impl AccountedIngested {
-    fn new() -> Self {
-        Self {
-            names: Vec::new(),
-            counts: Vec::new(),
-            bytes: Vec::new(),
-        }
-    }
-
-    fn push(&mut self, name: String, counts: u64, bytes: u64) {
-        self.names.push(name);
-        self.counts.push(counts);
-        self.bytes.push(bytes);
-    }
-
-    fn sort_by_counts(&mut self) {
-        let mut tmp: Vec<_> = self
-            .counts
-            .iter()
-            .map(|&x| x)
-            .enumerate()
-            .map(|(i, x)| (x, i))
-            .collect();
-        tmp.sort_unstable();
-        let tmp: Vec<_> = tmp.into_iter().rev().map(|x| x.1).collect();
-        self.reorder_by_index_list(&tmp);
-    }
-
-    fn sort_by_bytes(&mut self) {
-        let mut tmp: Vec<_> = self.bytes.iter().map(|&x| x).enumerate().map(|(i, x)| (x, i)).collect();
-        tmp.sort_unstable();
-        let tmp: Vec<_> = tmp.into_iter().rev().map(|x| x.1).collect();
-        self.reorder_by_index_list(&tmp);
-    }
-
-    fn reorder_by_index_list(&mut self, tmp: &[usize]) {
-        self.names = tmp.iter().map(|&x| self.names[x].clone()).collect();
-        self.counts = tmp.iter().map(|&x| self.counts[x]).collect();
-        self.bytes = tmp.iter().map(|&x| self.bytes[x]).collect();
-    }
-
-    fn truncate(&mut self, len: usize) {
-        self.names.truncate(len);
-        self.counts.truncate(len);
-        self.bytes.truncate(len);
     }
 }
 
@@ -169,6 +180,12 @@ impl AccountingIngested {
         for e in res.dim0.bytes {
             ret.bytes.push(e)
         }
+        for e in res.dim0.scalar_types {
+            ret.scalar_types.push(e)
+        }
+        for e in res.dim0.shapes {
+            ret.shapes.push(e)
+        }
         for e in res.dim1.names {
             ret.names.push(e)
         }
@@ -177,6 +194,12 @@ impl AccountingIngested {
         }
         for e in res.dim1.bytes {
             ret.bytes.push(e)
+        }
+        for e in res.dim1.scalar_types {
+            ret.scalar_types.push(e)
+        }
+        for e in res.dim1.shapes {
+            ret.shapes.push(e)
         }
         if let Some(sort) = qu.sort() {
             if sort == "counts" {
@@ -309,17 +332,23 @@ async fn resolve_usages(usage: UsageData, pgqu: &PgQueue) -> Result<Toplist, Err
                 match &info.shape {
                     Shape::Scalar => {
                         ret.scalar_count += 1;
-                        ret.dim0.push(info.name, counts, bytes);
+                        ret.dim0.push(info.name, counts, bytes, info.scalar_type, info.shape);
                     }
                     Shape::Wave(_) => {
                         ret.wave_count += 1;
-                        ret.dim1.push(info.name, counts, bytes);
+                        ret.dim1.push(info.name, counts, bytes, info.scalar_type, info.shape);
                     }
                     Shape::Image(_, _) => {}
                 }
             } else {
                 ret.infos_missing_count += 1;
-                ret.dim0.push("UNRESOLVEDSERIES".into(), counts, bytes);
+                ret.dim0.push(
+                    "UNRESOLVEDSERIES".into(),
+                    counts,
+                    bytes,
+                    ScalarType::BOOL,
+                    Shape::Scalar,
+                );
             }
         }
         usage_skip += nn;

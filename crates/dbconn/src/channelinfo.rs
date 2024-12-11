@@ -1,16 +1,14 @@
-use daqbuf_err as err;
-use err::thiserror;
-use err::ThisError;
 use netpod::ScalarType;
 use netpod::Shape;
 use tokio_postgres::Client;
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "ChannelInfo")]
-pub enum Error {
-    Pg(#[from] crate::pg::Error),
-    BadValue,
-}
+autoerr::create_error_v1!(
+    name(Error, "ChannelInfo"),
+    enum variants {
+        Pg(#[from] crate::pg::Error),
+        BadValue,
+    },
+);
 
 pub struct ChannelInfo {
     pub series: u64,

@@ -1,14 +1,11 @@
 use crate::events2::events::EventReadOpts;
 use crate::events2::prepare::StmtsEvents;
+use crate::log::*;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
 use core::fmt;
-use daqbuf_err as err;
 use daqbuf_series::SeriesId;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Future;
-use futures_util::StreamExt;
 use futures_util::TryStreamExt;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::BinningggContainerEventsDyn;
@@ -16,13 +13,11 @@ use items_0::Appendable;
 use items_0::Empty;
 use items_0::WithLen;
 use items_2::binning::container_events::ContainerEvents;
-use netpod::log::*;
 use netpod::ttl::RetentionTime;
 use netpod::DtNano;
 use netpod::EnumVariant;
 use netpod::TsMs;
 use netpod::TsNano;
-use scylla::frame::response::result::Row;
 use scylla::Session;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -31,23 +26,24 @@ use tracing::Instrument;
 
 macro_rules! trace_fetch { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "ScyllaReadEvents")]
-pub enum Error {
-    Prepare(#[from] crate::events2::prepare::Error),
-    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-    ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
-    ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
-    ScyllaWorker(Box<crate::worker::Error>),
-    ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
-    MissingQuery(String),
-    NotTokenAware,
-    RangeEndOverflow,
-    InvalidFuture,
-    TestError(String),
-    Logic,
-    TodoUnsupported,
-}
+autoerr::create_error_v1!(
+    name(Error, "ScyllaReadEvents"),
+    enum variants {
+        Prepare(#[from] crate::events2::prepare::Error),
+        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+        ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
+        ScyllaWorker(Box<crate::worker::Error>),
+        ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
+        MissingQuery(String),
+        NotTokenAware,
+        RangeEndOverflow,
+        InvalidFuture,
+        TestError(String),
+        Logic,
+        TodoUnsupported,
+    },
+);
 
 impl From<crate::worker::Error> for Error {
     fn from(value: crate::worker::Error) -> Self {
@@ -58,8 +54,8 @@ impl From<crate::worker::Error> for Error {
 pub(super) trait ValTy: Sized + 'static {
     type ScaTy: ScalarOps + std::default::Default;
     type ScyTy: for<'a, 'b> scylla::deserialize::DeserializeValue<'a, 'b>;
+    type ScyRowTy: for<'a, 'b> scylla::deserialize::DeserializeRow<'a, 'b>;
     type Container: BinningggContainerEventsDyn + Empty + Appendable<Self>;
-    fn from_scyty(inp: Self::ScyTy) -> Self;
     fn from_valueblob(inp: Vec<u8>) -> Self;
     fn table_name() -> &'static str;
     fn default() -> Self;
@@ -71,14 +67,7 @@ pub(super) trait ValTy: Sized + 'static {
         scy: Arc<Session>,
         stmts: Arc<StmtsEvents>,
     ) -> Pin<Box<dyn Future<Output = Result<(Box<dyn BinningggContainerEventsDyn>, ReadJobTrace), Error>> + Send>>;
-    fn convert_rows(
-        rows: Vec<Row>,
-        range: ScyllaSeriesRange,
-        ts_msp: TsMs,
-        with_values: bool,
-        bck: bool,
-        last_before: &mut Option<(TsNano, Self)>,
-    ) -> Result<Self::Container, Error>;
+    fn scy_row_to_ts_val(msp: TsMs, inp: Self::ScyRowTy) -> (TsNano, Self);
 }
 
 macro_rules! impl_scaty_scalar {
@@ -86,14 +75,11 @@ macro_rules! impl_scaty_scalar {
         impl ValTy for $st {
             type ScaTy = $st;
             type ScyTy = $st_scy;
+            type ScyRowTy = (i64, $st_scy);
             type Container = ContainerEvents<Self::ScaTy>;
 
-            fn from_scyty(inp: Self::ScyTy) -> Self {
-                inp as Self
-            }
-
             fn from_valueblob(_inp: Vec<u8>) -> Self {
-                <Self as ValTy>::default()
+                panic!("unused")
             }
 
             fn table_name() -> &'static str {
@@ -121,15 +107,9 @@ macro_rules! impl_scaty_scalar {
                 Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
             }
 
-            fn convert_rows(
-                rows: Vec<Row>,
-                range: ScyllaSeriesRange,
-                ts_msp: TsMs,
-                with_values: bool,
-                bck: bool,
-                last_before: &mut Option<(TsNano, Self)>,
-            ) -> Result<Self::Container, Error> {
-                convert_rows_0::<Self>(rows, range, ts_msp, with_values, bck, last_before)
+            fn scy_row_to_ts_val(msp: TsMs, inp: Self::ScyRowTy) -> (TsNano, Self) {
+                let ts = TsNano::from_ns(msp.ns_u64() + inp.0 as u64);
+                (ts, inp.1 as Self::ScaTy)
             }
         }
     };
@@ -140,11 +120,8 @@ macro_rules! impl_scaty_array {
         impl ValTy for $vt {
             type ScaTy = $st;
             type ScyTy = $st_scy;
+            type ScyRowTy = (i64, $st_scy);
             type Container = ContainerEvents<Vec<Self::ScaTy>>;
-
-            fn from_scyty(inp: Self::ScyTy) -> Self {
-                inp.into_iter().map(|x| x as Self::ScaTy).collect()
-            }
 
             fn from_valueblob(inp: Vec<u8>) -> Self {
                 if inp.len() < 32 {
@@ -188,15 +165,9 @@ macro_rules! impl_scaty_array {
                 Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
             }
 
-            fn convert_rows(
-                rows: Vec<Row>,
-                range: ScyllaSeriesRange,
-                ts_msp: TsMs,
-                with_values: bool,
-                bck: bool,
-                last_before: &mut Option<(TsNano, Self)>,
-            ) -> Result<Self::Container, Error> {
-                convert_rows_0::<Self>(rows, range, ts_msp, with_values, bck, last_before)
+            fn scy_row_to_ts_val(msp: TsMs, inp: Self::ScyRowTy) -> (TsNano, Self) {
+                let ts = TsNano::from_ns(msp.ns_u64() + inp.0 as u64);
+                (ts, inp.1 .into_iter().map(|x| x as _).collect())
             }
         }
     };
@@ -205,16 +176,11 @@ macro_rules! impl_scaty_array {
 impl ValTy for EnumVariant {
     type ScaTy = EnumVariant;
     type ScyTy = i16;
+    type ScyRowTy = (i64, i16, String);
     type Container = ContainerEvents<EnumVariant>;
 
-    fn from_scyty(inp: Self::ScyTy) -> Self {
-        let _ = inp;
-        panic!("uses more specialized impl")
-    }
-
-    fn from_valueblob(inp: Vec<u8>) -> Self {
-        let _ = inp;
-        panic!("uses more specialized impl")
+    fn from_valueblob(_inp: Vec<u8>) -> Self {
+        panic!("unused")
     }
 
     fn table_name() -> &'static str {
@@ -242,31 +208,20 @@ impl ValTy for EnumVariant {
         Box::pin(read_next_values_2::<Self>(opts, jobtrace, scy, stmts))
     }
 
-    fn convert_rows(
-        rows: Vec<Row>,
-        range: ScyllaSeriesRange,
-        ts_msp: TsMs,
-        with_values: bool,
-        bck: bool,
-        last_before: &mut Option<(TsNano, Self)>,
-    ) -> Result<Self::Container, Error> {
-        convert_rows_enum(rows, range, ts_msp, with_values, bck, last_before)
+    fn scy_row_to_ts_val(msp: TsMs, inp: Self::ScyRowTy) -> (TsNano, Self) {
+        let ts = TsNano::from_ns(msp.ns_u64() + inp.0 as u64);
+        (ts, EnumVariant::new(inp.1 as u16, inp.2))
     }
 }
 
 impl ValTy for Vec<String> {
     type ScaTy = String;
     type ScyTy = Vec<String>;
+    type ScyRowTy = (i64, Vec<String>);
     type Container = ContainerEvents<Vec<String>>;
 
-    fn from_scyty(inp: Self::ScyTy) -> Self {
-        inp
-    }
-
-    fn from_valueblob(inp: Vec<u8>) -> Self {
-        let _ = inp;
-        warn!("ValTy::from_valueblob for Vec<String>");
-        Vec::new()
+    fn from_valueblob(_inp: Vec<u8>) -> Self {
+        panic!("unused")
     }
 
     fn table_name() -> &'static str {
@@ -295,15 +250,9 @@ impl ValTy for Vec<String> {
         Box::pin(fut)
     }
 
-    fn convert_rows(
-        rows: Vec<Row>,
-        range: ScyllaSeriesRange,
-        ts_msp: TsMs,
-        with_values: bool,
-        bck: bool,
-        last_before: &mut Option<(TsNano, Self)>,
-    ) -> Result<Self::Container, Error> {
-        convert_rows_0::<Self>(rows, range, ts_msp, with_values, bck, last_before)
+    fn scy_row_to_ts_val(msp: TsMs, inp: Self::ScyRowTy) -> (TsNano, Self) {
+        let ts = TsNano::from_ns(msp.ns_u64() + inp.0 as u64);
+        (ts, inp.1)
     }
 }
 
@@ -470,9 +419,7 @@ async fn read_next_values_2<ST>(
 where
     ST: ValTy,
 {
-    let use_method_2 = true;
-
-    trace!("read_next_values_2  {:?}  st_name {}", opts, ST::st_name());
+    trace_fetch!("read_next_values_2  {:?}  st_name {}", opts, ST::st_name());
     let series = opts.series;
     let ts_msp = opts.ts_msp;
     let range = opts.range;
@@ -492,7 +439,7 @@ where
         } else {
             DtNano::from_ns(0)
         };
-        trace!(
+        trace_fetch!(
             "FWD  ts_msp {}  ts_lsp_min {}  ts_lsp_max {}  {}",
             ts_msp.fmt(),
             ts_lsp_min,
@@ -519,19 +466,10 @@ where
             ts_lsp_min.ns() as i64,
             ts_lsp_max.ns() as i64,
         );
-        trace!("FWD event search  params {:?}", params);
+        trace_fetch!("FWD event search  params {:?}", params);
         jobtrace.add_event_now(ReadEventKind::CallExecuteIter);
-        let mut res = scy.execute_iter(qu.clone(), params).await?;
-        if use_method_2 == false {
-            // let mut rows = Vec::new();
-            // while let Some(x) = res.next().await {
-            //     rows.push(x?);
-            // }
-            // let mut last_before = None;
-            // let ret = <ST as ValTy>::convert_rows(rows, range, ts_msp, with_values, !opts.fwd, &mut last_before)?;
-            // ret
-            todo!()
-        } else {
+        let res = scy.execute_iter(qu.clone(), params).await?;
+        {
             let mut ret = <ST as ValTy>::Container::empty();
             // TODO must branch already here depending on what input columns we expect
             if with_values {
@@ -545,10 +483,11 @@ where
                     ret
                 } else {
                     let mut i = 0;
-                    let mut it = res.rows_stream::<(i64, ST::ScyTy)>()?;
+                    let mut it = res.rows_stream::<<ST as ValTy>::ScyRowTy>()?;
                     while let Some(row) = it.try_next().await? {
-                        let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-                        let value = <ST as ValTy>::from_scyty(row.1);
+                        let (ts, value) = <ST as ValTy>::scy_row_to_ts_val(ts_msp, row);
+                        // let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                        // let value = <ST as ValTy>::from_scyty(row.1);
                         ret.push(ts, value);
                         i += 1;
                         if i % 2000 == 0 {
@@ -576,7 +515,7 @@ where
         } else {
             DtNano::from_ns(0)
         };
-        trace!(
+        trace_fetch!(
             "BCK  ts_msp {}  ts_lsp_max {}  {}",
             ts_msp.fmt(),
             ts_lsp_max,
@@ -588,8 +527,8 @@ where
             .shape(ST::is_valueblob())
             .st(ST::st_name())?;
         let params = (series as i64, ts_msp.ms() as i64, ts_lsp_max.ns() as i64);
-        trace!("BCK event search  params {:?}", params);
-        let mut res = scy.execute_iter(qu.clone(), params).await?;
+        trace_fetch!("BCK event search  params {:?}", params);
+        let res = scy.execute_iter(qu.clone(), params).await?;
         {
             let mut ret = <ST as ValTy>::Container::empty();
             // TODO must branch already here depending on what input columns we expect
@@ -604,10 +543,11 @@ where
                     ret
                 } else {
                     let mut i = 0;
-                    let mut it = res.rows_stream::<(i64, ST::ScyTy)>()?;
+                    let mut it = res.rows_stream::<<ST as ValTy>::ScyRowTy>()?;
                     while let Some(row) = it.try_next().await? {
-                        let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-                        let value = <ST as ValTy>::from_scyty(row.1);
+                        let (ts, value) = <ST as ValTy>::scy_row_to_ts_val(ts_msp, row);
+                        // let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
+                        // let value = <ST as ValTy>::from_scyty(row.1);
                         ret.push(ts, value);
                         i += 1;
                         if i % 2000 == 0 {
@@ -629,136 +569,8 @@ where
                 ret
             }
         }
-        // let mut _last_before = None;
-        // let ret = ST::convert_rows(rows, range, ts_msp, with_values, !opts.fwd, &mut _last_before)?;
-        // if ret.len() > 1 {
-        //     error!("multiple events in backwards search {}", ret.len());
-        // }
-        // ret
     };
-    trace!("read  ts_msp {}  len {}", ts_msp.fmt(), ret.len());
+    trace_fetch!("read  ts_msp {}  len {}", ts_msp.fmt(), ret.len());
     let ret = Box::new(ret);
     Ok((ret, jobtrace))
-}
-
-fn convert_rows_0<ST: ValTy>(
-    rows: Vec<Row>,
-    range: ScyllaSeriesRange,
-    ts_msp: TsMs,
-    with_values: bool,
-    bck: bool,
-    last_before: &mut Option<(TsNano, ST)>,
-) -> Result<<ST as ValTy>::Container, Error> {
-    todo!()
-}
-
-// fn convert_rows_0<ST: ValTy>(
-//     rows: Vec<Row>,
-//     range: ScyllaSeriesRange,
-//     ts_msp: TsMs,
-//     with_values: bool,
-//     bck: bool,
-//     last_before: &mut Option<(TsNano, ST)>,
-// ) -> Result<<ST as ValTy>::Container, Error> {
-//     let mut ret = <ST as ValTy>::Container::empty();
-//     for row in rows {
-//         let (ts, value) = if with_values {
-//             if ST::is_valueblob() {
-//                 let row: (i64, Vec<u8>) = row.into_typed()?;
-//                 // trace!("read a value blob len {}", row.1.len());
-//                 let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-//                 let value = ValTy::from_valueblob(row.1);
-//                 (ts, value)
-//             } else {
-//                 let row: (i64, ST::ScyTy) = row.into_typed()?;
-//                 let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-//                 let value = ValTy::from_scyty(row.1);
-//                 (ts, value)
-//             }
-//         } else {
-//             let row: (i64,) = row.into_typed()?;
-//             let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-//             let value = ValTy::default();
-//             (ts, value)
-//         };
-//         if bck {
-//             if ts >= range.beg() {
-//                 // TODO count as logic error
-//                 error!("ts >= range.beg");
-//             } else if ts < range.beg() {
-//                 ret.push(ts, value);
-//             } else {
-//                 *last_before = Some((ts, value));
-//             }
-//         } else {
-//             if ts >= range.end() {
-//                 // TODO count as logic error
-//                 error!("ts >= range.end");
-//             } else if ts >= range.beg() {
-//                 ret.push(ts, value);
-//             } else {
-//                 if last_before.is_none() {
-//                     warn!("encounter event before range in forward read {ts}");
-//                 }
-//                 *last_before = Some((ts, value));
-//             }
-//         }
-//     }
-//     Ok(ret)
-// }
-
-fn convert_rows_enum(
-    rows: Vec<Row>,
-    range: ScyllaSeriesRange,
-    ts_msp: TsMs,
-    with_values: bool,
-    bck: bool,
-    last_before: &mut Option<(TsNano, EnumVariant)>,
-) -> Result<<EnumVariant as ValTy>::Container, Error> {
-    let mut ret = <EnumVariant as ValTy>::Container::new();
-    trace_fetch!("convert_rows_enum  {}", <EnumVariant as ValTy>::st_name());
-    for row in rows {
-        let (ts, value) = if with_values {
-            if EnumVariant::is_valueblob() {
-                return Err(Error::Logic);
-            } else {
-                let row: (i64, i16, String) = row.into_typed()?;
-                let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-                let val = row.1 as u16;
-                let valstr = row.2;
-                let value = EnumVariant::new(val, valstr);
-                // trace_fetch!("read enum variant  {:?}  {:?}", value, value.name_string());
-                (ts, value)
-            }
-        } else {
-            let row: (i64,) = row.into_typed()?;
-            let ts = TsNano::from_ns(ts_msp.ns_u64() + row.0 as u64);
-            let value = ValTy::default();
-            (ts, value)
-        };
-        if bck {
-            if ts >= range.beg() {
-                // TODO count as logic error
-                error!("ts >= range.beg");
-            } else if ts < range.beg() {
-                ret.push_back(ts, value);
-            } else {
-                *last_before = Some((ts, value));
-            }
-        } else {
-            if ts >= range.end() {
-                // TODO count as logic error
-                error!("ts >= range.end");
-            } else if ts >= range.beg() {
-                ret.push_back(ts, value);
-            } else {
-                if last_before.is_none() {
-                    warn!("encounter event before range in forward read {ts}");
-                }
-                *last_before = Some((ts, value));
-            }
-        }
-    }
-    trace_fetch!("convert_rows_enum  return {:?}", ret);
-    Ok(ret)
 }
