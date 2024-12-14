@@ -207,6 +207,9 @@ where
             evs.push_back(TsNano::from_ns(ts), PulsedVal(pulse, v));
             Ok(())
         } else {
+            let self_name = std::any::type_name::<Self>();
+            let events_name = events.type_name();
+            error!("unexpected container  Self {}  events {}", self_name, events_name);
             Err(Error::with_msg_no_trace("unexpected container"))
         }
     }
@@ -290,11 +293,11 @@ where
             };
             let v = <EVT as ScalarValueFromBytes<EVT>>::convert_dim1(buf, endian, n as _)?;
             evs.push_back(TsNano::from_ns(ts), PulsedVal(pulse, v));
-            // evs.values.push_back(v);
-            // evs.tss.push_back(ts);
-            // evs.pulses.push_back(pulse);
             Ok(())
         } else {
+            let self_name = std::any::type_name::<Self>();
+            let events_name = events.type_name();
+            error!("unexpected container  Self {}  events {}", self_name, events_name);
             Err(Error::with_msg_no_trace("unexpected container"))
         }
     }

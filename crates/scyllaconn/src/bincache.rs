@@ -4,7 +4,6 @@ use crate::log::*;
 use crate::worker::ScyllaQueue;
 use futures_util::TryStreamExt;
 use items_0::merge::MergeableTy;
-use items_0::timebin::BinsBoxed;
 use items_2::binning::container_bins::ContainerBins;
 use netpod::ttl::RetentionTime;
 use netpod::DtMs;
@@ -90,13 +89,6 @@ impl streams::timebin::CacheReadProvider for ScyllaPrebinnedReadProvider {
         // let fut = async { todo!("TODO impl scylla cache read") };
         let fut = scylla_read_prebinned_f32(series, bin_len, msp, offs, self.scyqueue.clone());
         streams::timebin::cached::reader::CacheReading::new(Box::pin(fut))
-    }
-
-    fn write(&self, _series: u64, _bins: BinsBoxed) -> streams::timebin::cached::reader::CacheWriting {
-        // let scyqueue = self.scyqueue.clone();
-        // let fut = async move { scyqueue.write_cache_f32(series, bins).await };
-        // streams::timebin::cached::reader::CacheWriting::new(Box::pin(fut))
-        todo!("TODO impl scylla cache write")
     }
 }
 
