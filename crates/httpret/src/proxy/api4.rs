@@ -50,11 +50,12 @@ pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig)
     let mut tags = Vec::new();
     let mut bodies = Vec::new();
     for pb in &proxy_config.backends {
-        if if let Some(b) = &query.backend {
+        let use_backend = if let Some(b) = &query.backend {
             pb.name.contains(b)
         } else {
             true
-        } {
+        };
+        if use_backend {
             match Url::parse(&format!("{}/api/4/search/channel", pb.url)) {
                 Ok(mut url) => {
                     query.append_to_url(&mut url);
@@ -69,7 +70,8 @@ pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig)
     let nt = |tag: String, res: Response<Incoming>| {
         let fut = async {
             let (_head, body) = res.into_parts();
-            let body = read_body_bytes(body).await?;
+            let fut = read_body_bytes(body);
+            let body = fut.await?;
             //info!("got a result {:?}", body);
             let res: ChannelSearchResult = match serde_json::from_slice(&body) {
                 Ok(k) => k,
@@ -113,7 +115,7 @@ pub async fn channel_search(req: Requ, ctx: &ReqCtx, proxy_config: &ProxyConfig)
         tags,
         nt,
         ft,
-        Duration::from_millis(3000),
+        Duration::from_millis(1100),
         ctx,
     )
     .await?;
