@@ -79,7 +79,7 @@ async fn read_local_config_real(
         Ok(buf) => parse_config(&buf),
         Err(e) => match e.kind() {
             ErrorKind::NotFound => Err(ConfigParseError::FileNotFound),
-            ErrorKind::PermissionDenied => Err(ConfigParseError::PermissionDenied),
+            ErrorKind::PermissionDenied => Err(ConfigParseError::PermissionDenied(path.clone())),
             e => {
                 error!("read_local_config_real {e:?}");
                 Err(ConfigParseError::IO)
