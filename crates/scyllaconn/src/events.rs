@@ -32,7 +32,6 @@ autoerr::create_error_v1!(
         Prepare(#[from] crate::events2::prepare::Error),
         ScyllaQuery(#[from] scylla::transport::errors::QueryError),
         ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
-        ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
         ScyllaWorker(Box<crate::worker::Error>),
         ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
         MissingQuery(String),

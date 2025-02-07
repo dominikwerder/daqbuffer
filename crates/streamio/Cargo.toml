@@ -21,6 +21,7 @@ byteorder = "1.4.3"
 async-channel = "1.9.0"
 rand_xoshiro = "0.6.0"
 thiserror = "=0.0.1"
+autoerr = "0.0.3"
 chrono = { version = "0.4.19", features = ["serde"] }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../../../daqbuf-query", package = "daqbuf-query" }

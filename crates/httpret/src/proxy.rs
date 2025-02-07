@@ -189,8 +189,6 @@ async fn proxy_http_service_inner(
         }
     } else if let Some(h) = api4::StatusNodesRecursive::handler(&req) {
         h.handle(req, ctx, &proxy_config, service_version).await
-    } else if path == "/api/4/backends" {
-        Ok(backends(req, proxy_config).await?)
     } else if let Some(h) = api4::backend::BackendListHandler::handler(&req) {
         h.handle(req, ctx, &proxy_config).await
     } else if let Some(h) = api4::ChannelSearchAggHandler::handler(&req) {

@@ -28,6 +28,7 @@ rand = "0.8.5"
 ciborium = "0.2.1"
 flate2 = "1"
 brotli = "7.0.0"
+autoerr = "0.0.3"
 daqbuf-err = { path = "../../../daqbuf-err" }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
 query = { path = "../../../daqbuf-query", package = "daqbuf-query" }

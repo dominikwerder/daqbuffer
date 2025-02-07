@@ -25,14 +25,15 @@ use streams::tcprawclient::HttpSimplePost;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
-#[derive(Debug, thiserror::Error)]
-#[cstm(name = "TcpRawClient")]
-pub enum Error {
-    IO(#[from] std::io::Error),
-    Frame(#[from] items_2::frame::Error),
-    Framable(#[from] items_2::framable::Error),
-    StreamsRawClient(#[from] streams::tcprawclient::Error),
-}
+autoerr::create_error_v1!(
+    name(Error, "TcpRawClient"),
+    enum variants {
+        IO(#[from] std::io::Error),
+        Frame(#[from] items_2::frame::Error),
+        Framable(#[from] items_2::framable::Error),
+        StreamsRawClient(#[from] streams::tcprawclient::Error),
+    },
+);
 
 pub type BoxedStream<T> = Pin<Box<dyn Stream<Item = Sitemty<T>> + Send>>;
 

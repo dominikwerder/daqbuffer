@@ -1,6 +1,5 @@
 use crate::response;
 use crate::ServiceSharedResources;
-use daqbuf_err::thiserror;
 use dbconn::create_connection;
 use dbconn::worker::PgQueue;
 use futures_util::StreamExt;
@@ -41,37 +40,38 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use url::Url;
 
-#[derive(Debug, thiserror::Error)]
-#[cstm(name = "ChannelConfigError")]
-pub enum Error {
-    NotFound(SfDbChannel),
-    ConfigQuorum(#[from] nodenet::configquorum::Error),
-    ConfigNode(#[from] nodenet::channelconfig::Error),
-    Http(#[from] crate::Error),
-    HttpCrate(#[from] http::Error),
-    // TODO create dedicated error type for query parsing
-    BadQuery(#[from] daqbuf_err::Error),
-    MissingBackend,
-    MissingScalarType,
-    MissingShape,
-    MissingShapeKind,
-    MissingEdge,
-    MissingTimerange,
-    MissingChannelName,
-    Uri(#[from] netpod::UriError),
-    ChannelConfigQuery(daqbuf_err::Error),
-    ExpectScyllaBackend,
-    Pg(#[from] dbconn::pg::Error),
-    Scylla(String),
-    Join,
-    OtherErr(daqbuf_err::Error),
-    PgWorker(#[from] dbconn::worker::Error),
-    Async(#[from] netpod::AsyncChannelError),
-    ChannelConfig(#[from] dbconn::channelconfig::Error),
-    Netpod(#[from] netpod::Error),
-    ScyllaQuery(#[from] scyllaconn::scylla::transport::errors::QueryError),
-    ScyllaTypeCheck(#[from] scyllaconn::scylla::deserialize::TypeCheckError),
-}
+autoerr::create_error_v1!(
+    name(Error, "ChannelConfigError"),
+    enum variants {
+        NotFound(SfDbChannel),
+        ConfigQuorum(#[from] nodenet::configquorum::Error),
+        ConfigNode(#[from] nodenet::channelconfig::Error),
+        Http(#[from] crate::Error),
+        HttpCrate(#[from] http::Error),
+        // TODO create dedicated error type for query parsing
+        BadQuery(#[from] daqbuf_err::Error),
+        MissingBackend,
+        MissingScalarType,
+        MissingShape,
+        MissingShapeKind,
+        MissingEdge,
+        MissingTimerange,
+        MissingChannelName,
+        Uri(#[from] netpod::UriError),
+        ChannelConfigQuery(daqbuf_err::Error),
+        ExpectScyllaBackend,
+        Pg(#[from] dbconn::pg::Error),
+        Scylla(String),
+        Join,
+        OtherErr(daqbuf_err::Error),
+        PgWorker(#[from] dbconn::worker::Error),
+        Async(#[from] netpod::AsyncChannelError),
+        ChannelConfig(#[from] dbconn::channelconfig::Error),
+        Netpod(#[from] netpod::Error),
+        ScyllaQuery(#[from] scyllaconn::scylla::transport::errors::QueryError),
+        ScyllaTypeCheck(#[from] scyllaconn::scylla::deserialize::TypeCheckError),
+    },
+);
 
 fn other_err_error(e: daqbuf_err::Error) -> Error {
     Error::OtherErr(e)

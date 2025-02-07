@@ -17,8 +17,6 @@ pub mod settings;
 use crate::bodystream::response;
 use crate::err::Error;
 use daqbuf_err;
-use daqbuf_err::thiserror;
-use daqbuf_err::ThisError;
 use dbconn::worker::PgQueue;
 use dbconn::worker::PgWorker;
 use futures_util::Future;
@@ -42,14 +40,11 @@ use netpod::status_board_init;
 use netpod::NodeConfigCached;
 use netpod::ReqCtx;
 use netpod::ServiceVersion;
-use netpod::APP_JSON;
 use panic::AssertUnwindSafe;
 use panic::UnwindSafe;
 use pin::Pin;
 use scyllaconn::worker::ScyllaQueue;
 use scyllaconn::worker::ScyllaWorker;
-use serde::Deserialize;
-use serde::Serialize;
 use std::net;
 use std::panic;
 use std::pin;
@@ -61,25 +56,20 @@ use taskrun::tokio;
 use taskrun::tokio::net::TcpListener;
 use tracing::Instrument;
 
-#[derive(Debug, ThisError, Serialize, Deserialize)]
-#[cstm(name = "Retrieval")]
-pub enum RetrievalError {
-    Error(#[from] daqbuf_err::Error),
-    Error2(#[from] crate::err::Error),
-    TextError(String),
-    #[serde(skip)]
-    Hyper(#[from] hyper::Error),
-    #[serde(skip)]
-    Http(#[from] http::Error),
-    #[serde(skip)]
-    Serde(#[from] serde_json::Error),
-    #[serde(skip)]
-    Fmt(#[from] std::fmt::Error),
-    #[serde(skip)]
-    Url(#[from] url::ParseError),
-    #[serde(skip)]
-    Netpod(#[from] netpod::Error),
-}
+autoerr::create_error_v1!(
+    name(RetrievalError, "Retrieval"),
+    enum variants {
+        Error(#[from] daqbuf_err::Error),
+        Error2(#[from] crate::err::Error),
+        TextError(String),
+        Hyper(#[from] hyper::Error),
+        Http(#[from] http::Error),
+        Serde(#[from] serde_json::Error),
+        Fmt(#[from] std::fmt::Error),
+        Url(#[from] url::ParseError),
+        Netpod(#[from] netpod::Error),
+    },
+);
 
 trait IntoBoxedError: std::error::Error {}
 impl IntoBoxedError for net::AddrParseError {}

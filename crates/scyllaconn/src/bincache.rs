@@ -11,7 +11,7 @@ use netpod::TsNano;
 use scylla::Session as ScySession;
 use std::ops::Range;
 use streams::timebin::cached::reader::BinsReadRes;
-use streams::timebin::cached::reader::PrebinnedPartitioning;
+use daqbuf_series::msp::PrebinnedPartitioning;
 
 async fn scylla_read_prebinned_f32(
     series: u64,

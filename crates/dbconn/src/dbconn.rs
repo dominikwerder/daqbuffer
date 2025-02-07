@@ -58,7 +58,7 @@ pub async fn delay_us(mu: u64) {
 }
 
 pub async fn delay_io_short() {
-    delay_us(1000).await;
+    delay_us(500).await;
 }
 
 pub async fn delay_io_medium() {

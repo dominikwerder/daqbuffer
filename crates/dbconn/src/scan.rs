@@ -54,6 +54,7 @@ fn _get_hostname() -> Result<String, Error> {
 }
 
 pub async fn get_node_disk_ident(node_config: &NodeConfigCached, dbc: &Client) -> Result<NodeDiskIdent, Error> {
+    info!("get_node_disk_ident");
     let sql = "select nodes.rowid, facility, split, hostname from nodes, facilities where facilities.name = $1 and facility = facilities.rowid and hostname = $2";
     let rows = dbc
         .query(sql, &[&node_config.node_config.cluster.backend, &node_config.node.host])
@@ -61,7 +62,7 @@ pub async fn get_node_disk_ident(node_config: &NodeConfigCached, dbc: &Client) -
         .err_conv()?;
     if rows.len() != 1 {
         return Err(Error::with_msg(format!(
-            "get_node can't find unique entry for {} {}",
+            "get_node_disk_ident can not find unique entry for {:?} {:?}",
             node_config.node.host, node_config.node_config.cluster.backend
         )));
     }
@@ -202,7 +203,19 @@ async fn update_db_with_channel_names_inner(
 ) -> Result<(), Error> {
     let (dbc, _pgjh) = create_connection(&db_config).await?;
     info!("update_db_with_channel_names connection done");
-    let node_disk_ident = get_node_disk_ident(&node_config, &dbc).await?;
+    let node_disk_ident = match get_node_disk_ident(&node_config, &dbc).await {
+        Ok(x) => {
+            // info!("node_disk_ident {:?}", x);
+            debug!("node_disk_ident {:?}", x);
+            x
+        }
+        Err(e) => {
+            let p1 = &node_config.node.host;
+            let p2 = &node_config.node_config.cluster.backend;
+            error!("can not get_node_disk_ident  {:?}  {:?}", p1, p2);
+            return Err(e);
+        }
+    };
     info!("update_db_with_channel_names get_node_disk_ident done");
     let insert_sql = concat!(
         "insert into channels (facility, name) select facility, name from (values ($1::bigint, $2::text)) v1 (facility, name)",
@@ -229,8 +242,13 @@ async fn update_db_with_channel_names_inner(
         .as_ref()
         .ok_or_else(|| Error::with_msg(format!("missing sf databuffer config in node")))?
         .data_base_path;
+    debug!("base_path {:?}", base_path);
     let channel_names = find_channel_names_from_config(base_path).await?;
     for ch in channel_names {
+        if ch.contains("BEAT") || ch.contains("BEAM") {
+            debug!("ch {:?}", ch);
+        }
+        debug!("ch {:?}", ch);
         let fac = node_disk_ident.facility;
         crate::delay_io_short().await;
         let ret = dbc
@@ -336,7 +354,19 @@ async fn update_db_with_all_channel_configs_inner(
     let node_config = &node_config;
     let (dbc, _pgjh) = create_connection(&node_config.node_config.cluster.database).await?;
     let dbc = Arc::new(dbc);
-    let node_disk_ident = &get_node_disk_ident(node_config, &dbc).await?;
+    let node_disk_ident = match get_node_disk_ident(node_config, &dbc).await {
+        Ok(x) => {
+            // info!("node_disk_ident {:?}", x);
+            debug!("node_disk_ident {:?}", x);
+            x
+        }
+        Err(e) => {
+            let p1 = &node_config.node.host;
+            let p2 = &node_config.node_config.cluster.backend;
+            error!("ww can not get_node_disk_ident  {:?}  {:?}", p1, p2);
+            return Err(e);
+        }
+    };
     let rows = dbc
         .query(
             "select rowid, facility, name from channels where facility = $1 order by facility, name",
@@ -353,9 +383,10 @@ async fn update_db_with_all_channel_configs_inner(
         let rowid: i64 = row.try_get(0).err_conv()?;
         let _facility: i64 = row.try_get(1).err_conv()?;
         let channel: String = row.try_get(2).err_conv()?;
+        debug!("updating config {:?}", channel);
         match update_db_with_channel_config(
             node_config,
-            node_disk_ident,
+            &node_disk_ident,
             rowid,
             &channel,
             dbc.clone(),

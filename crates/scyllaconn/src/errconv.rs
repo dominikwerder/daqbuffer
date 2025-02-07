@@ -1,6 +1,5 @@
 use daqbuf_err as err;
 use err::Error;
-use scylla::frame::response::cql_to_rust::FromRowError as ScyFromRowError;
 use scylla::transport::errors::NewSessionError as ScyNewSessionError;
 use scylla::transport::errors::QueryError as ScyQueryError;
 
@@ -26,15 +25,6 @@ impl<T> ErrConv<T> for Result<T, ScyQueryError> {
 }
 
 impl<T> ErrConv<T> for Result<T, ScyNewSessionError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, ScyFromRowError> {
     fn err_conv(self) -> Result<T, Error> {
         match self {
             Ok(k) => Ok(k),
