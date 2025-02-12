@@ -69,12 +69,18 @@ use tokio::net::TcpListener;
 use tracing::Instrument;
 use url::Url;
 
+#[cfg(feature = "http3")]
+use crate::http3;
+#[cfg(not(feature = "http3"))]
+use crate::http3_dummy as http3;
+
 const DISTRI_PRE: &str = "/distri/";
 
 pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -> Result<(), Error> {
     status_board_init();
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
+    let http3 = http3::Http3Support::new(bind_addr.clone()).await?;
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
         let (stream, addr) = match listener.accept().await {
@@ -103,7 +109,9 @@ pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -
             }
         });
     }
-    info!("proxy done");
+    info!("http service done");
+    let _x: () = http3.wait_idle().await;
+    info!("http host done");
     Ok(())
 }
 

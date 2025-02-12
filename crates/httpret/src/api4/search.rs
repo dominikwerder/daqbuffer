@@ -16,6 +16,7 @@ use netpod::ChannelSearchResult;
 use netpod::NodeConfigCached;
 use netpod::ACCEPT_ALL;
 use netpod::APP_JSON;
+use tracing::Instrument;
 
 pub struct ChannelSearchHandler {}
 
@@ -55,7 +56,17 @@ impl ChannelSearchHandler {
 async fn channel_search(req: Requ, pgqueue: &PgQueue, ncc: &NodeConfigCached) -> Result<ChannelSearchResult, Error> {
     let url = req_uri_to_url(req.uri())?;
     let query = ChannelSearchQuery::from_url(&url)?;
-    info!("search query: {:?}", query);
-    let res = dbconn::search::search_channel(query, pgqueue, ncc).await?;
+    let logspan = if query.log_level() == "trace" {
+        trace!("enable trace for handler");
+        tracing::span!(tracing::Level::INFO, "log_span_trace")
+    } else if query.log_level() == "debug" {
+        debug!("enable debug for handler");
+        tracing::span!(tracing::Level::INFO, "log_span_debug")
+    } else {
+        tracing::Span::none()
+    };
+    let res = dbconn::search::search_channel(query, pgqueue, ncc)
+        .instrument(logspan)
+        .await?;
     Ok(res)
 }

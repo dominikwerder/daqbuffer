@@ -284,6 +284,7 @@ pub async fn search_channel(
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
 ) -> Result<ChannelSearchResult, Error> {
+    debug!("search_channel  {:?}", query);
     let backend = &ncc.node_config.cluster.backend;
     let pgconf = &ncc.node_config.cluster.database;
     let mut query = query;

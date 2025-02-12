@@ -215,8 +215,8 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                             sr = g.parent();
                         }
                     }
-                    // allow
-                    true
+                    allow
+                    // true
                 } else {
                     false
                 }
@@ -251,8 +251,8 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                             sr = g.parent();
                         }
                     }
-                    // allow
-                    true
+                    allow
+                    // true
                 } else {
                     false
                 }

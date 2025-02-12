@@ -8,7 +8,6 @@ use http::Method;
 use http::StatusCode;
 use httpclient::body_empty;
 use httpclient::body_string;
-use httpclient::error_response;
 use httpclient::error_status_response;
 use httpclient::IntoBody;
 use httpclient::Requ;
@@ -30,7 +29,7 @@ pub struct ConnectionStatusEvents {}
 
 impl ConnectionStatusEvents {
     pub fn handler(req: &Requ) -> Option<Self> {
-        if req.uri().path() == "/api/4/status/connection/events" {
+        if req.uri().path() == "/api/4/private/status/connection/events" {
             Some(Self {})
         } else {
             None
@@ -90,7 +89,7 @@ impl ConnectionStatusEvents {
         let _do_one_before_range = true;
         let ret = Vec::new();
         if true {
-            return Err(Error::with_msg_no_trace("TODO channel_status fetch_data"));
+            return Err(Error::with_msg_no_trace("TODO dedicated connection status?"));
         }
         // let mut stream =
         //     scyllaconn::status::StatusStreamScylla::new(series, q.range().clone(), do_one_before_range, scy);

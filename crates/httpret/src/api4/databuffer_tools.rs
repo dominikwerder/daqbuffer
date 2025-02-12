@@ -285,7 +285,9 @@ async fn find_active(
     }
 }
 
+#[pin_project::pin_project]
 struct FindActiveStream {
+    #[pin]
     rx: Receiver<Result<ActiveChannelDesc, FindActiveError>>,
 }
 
@@ -308,9 +310,9 @@ impl FindActiveStream {
 impl Stream for FindActiveStream {
     type Item = Result<ActiveChannelDesc, FindActiveError>;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         use Poll::*;
-        match self.rx.poll_next_unpin(cx) {
+        match self.project().rx.poll_next_unpin(cx) {
             Ready(Some(item)) => Ready(Some(item)),
             Ready(None) => Ready(None),
             Pending => Pending,

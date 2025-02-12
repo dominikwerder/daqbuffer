@@ -14,6 +14,13 @@ pub mod pulsemap;
 pub mod requests;
 pub mod settings;
 
+#[cfg(feature = "http3")]
+pub mod http3;
+#[cfg(not(feature = "http3"))]
+pub mod http3_dummy;
+#[cfg(not(feature = "http3"))]
+use http3_dummy as http3;
+
 use crate::bodystream::response;
 use crate::err::Error;
 use daqbuf_err;
@@ -68,6 +75,7 @@ autoerr::create_error_v1!(
         Fmt(#[from] std::fmt::Error),
         Url(#[from] url::ParseError),
         Netpod(#[from] netpod::Error),
+        Http3Support(#[from] crate::http3::Error),
     },
 );
 
@@ -152,6 +160,7 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
     let shared_res = Arc::new(shared_res);
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", ncc.node.listen(), ncc.node.port))?;
+    let http3 = http3::Http3Support::new(bind_addr.clone()).await?;
     // tokio::net::TcpSocket::new_v4()?.listen(200)?
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
@@ -188,6 +197,8 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
             }
         });
     }
+    info!("http service done");
+    let _x: () = http3.wait_idle().await;
     info!("http host done");
     // rawjh.await??;
     Ok(())

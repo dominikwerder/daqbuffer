@@ -32,6 +32,7 @@ use netpod::APP_JSON_FRAMED;
 use netpod::HEADER_NAME_REQUEST_ID;
 use nodenet::client::OpenBoxedBytesViaHttp;
 use query::api4::events::PlainEventsQuery;
+use std::pin::Pin;
 use std::sync::Arc;
 use streams::collect::CollectResult;
 use streams::instrument::InstrumentStream;
@@ -39,7 +40,9 @@ use streams::lenframe::bytes_chunks_to_framed;
 use streams::lenframe::bytes_chunks_to_len_framed_str;
 use streams::plaineventscbor::plain_events_cbor_stream;
 use streams::plaineventsjson::plain_events_json_stream;
+use streams::streamtimeout::StreamTimeout2;
 use tracing::Instrument;
+use tracing::Span;
 
 #[derive(Debug, ThisError)]
 #[cstm(name = "Api4Events")]
@@ -134,7 +137,7 @@ impl EventsHandler {
         } else {
             tracing::Span::none()
         };
-        match plain_events(req, evq, ctx, &shared_res.pgqueue, ncc)
+        match plain_events_prep(req, evq, ctx, &shared_res.pgqueue, ncc, logspan.clone())
             .instrument(logspan)
             .await
         {
@@ -144,100 +147,80 @@ impl EventsHandler {
     }
 }
 
-async fn plain_events(
+async fn plain_events_prep(
     req: Requ,
     evq: PlainEventsQuery,
     ctx: &ReqCtx,
     pgqueue: &PgQueue,
     ncc: &NodeConfigCached,
+    logspan: Span,
 ) -> Result<StreamResponse, Error> {
-    let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
-        .await?
-        .ok_or_else(|| Error::ChannelNotFound)?;
+    let res2 = HandleRes2::new(ctx, logspan, evq.clone(), pgqueue, ncc).await?;
+    plain_events(res2, req).await
+}
+
+async fn plain_events(res2: HandleRes2<'_>, req: Requ) -> Result<StreamResponse, Error> {
     if accepts_cbor_framed(req.headers()) {
-        Ok(plain_events_cbor_framed(req, evq, ch_conf, ctx, ncc).await?)
+        Ok(plain_events_cbor_framed(req, res2).await?)
     } else if accepts_json_framed(req.headers()) {
-        Ok(plain_events_json_framed(req, evq, ch_conf, ctx, ncc).await?)
+        Ok(plain_events_json_framed(req, res2).await?)
     } else if accepts_json_or_all(req.headers()) {
-        Ok(plain_events_json(req, evq, ch_conf, ctx, ncc).await?)
+        Ok(plain_events_json(req, res2).await?)
     } else {
-        let ret = error_response(format!("unsupported accept"), ctx.reqid());
+        let ret = error_response(format!("unsupported accept"), res2.ctx.reqid());
         Ok(ret)
     }
 }
 
-async fn plain_events_cbor_framed(
-    req: Requ,
-    evq: PlainEventsQuery,
-    ch_conf: ChannelTypeConfigGen,
-    ctx: &ReqCtx,
-    ncc: &NodeConfigCached,
-) -> Result<StreamResponse, Error> {
-    debug!("plain_events_cbor_framed  {ch_conf:?}  {req:?}");
-    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let open_bytes = Arc::pin(open_bytes);
-    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
-    let stream = plain_events_cbor_stream(&evq, ch_conf, ctx, open_bytes, timeout_provider).await?;
+async fn plain_events_cbor_framed(req: Requ, res2: HandleRes2<'_>) -> Result<StreamResponse, Error> {
+    debug!("plain_events_cbor_framed  {:?}  {:?}", res2.ch_conf, req);
+    let stream = plain_events_cbor_stream(
+        &res2.evq,
+        res2.ch_conf,
+        res2.ctx,
+        res2.open_bytes,
+        res2.timeout_provider,
+    )
+    .await?;
     let stream = bytes_chunks_to_framed(stream);
-    let logspan = if evq.log_level() == "trace" {
-        trace!("enable trace for handler");
-        tracing::span!(tracing::Level::INFO, "log_span_trace")
-    } else if evq.log_level() == "debug" {
-        debug!("enable debug for handler");
-        tracing::span!(tracing::Level::INFO, "log_span_debug")
-    } else {
-        tracing::Span::none()
-    };
-    let stream = InstrumentStream::new(stream, logspan);
+    let stream = InstrumentStream::new(stream, res2.logspan);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_CBOR_FRAMED)
-        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .header(HEADER_NAME_REQUEST_ID, res2.ctx.reqid())
         .body(body_stream(stream))?;
     Ok(ret)
 }
 
-async fn plain_events_json_framed(
-    req: Requ,
-    evq: PlainEventsQuery,
-    ch_conf: ChannelTypeConfigGen,
-    ctx: &ReqCtx,
-    ncc: &NodeConfigCached,
-) -> Result<StreamResponse, Error> {
-    debug!("plain_events_json_framed  {ch_conf:?}  {req:?}");
-    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let open_bytes = Arc::pin(open_bytes);
-    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
-    let stream = plain_events_json_stream(&evq, ch_conf, ctx, open_bytes, timeout_provider).await?;
+async fn plain_events_json_framed(req: Requ, res2: HandleRes2<'_>) -> Result<StreamResponse, Error> {
+    debug!("plain_events_json_framed  {:?}  {:?}", res2.ch_conf, req);
+    let stream = plain_events_json_stream(
+        &res2.evq,
+        res2.ch_conf,
+        res2.ctx,
+        res2.open_bytes,
+        res2.timeout_provider,
+    )
+    .await?;
     let stream = bytes_chunks_to_len_framed_str(stream);
+    let stream = InstrumentStream::new(stream, res2.logspan);
     let ret = response(StatusCode::OK)
         .header(CONTENT_TYPE, APP_JSON_FRAMED)
-        .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+        .header(HEADER_NAME_REQUEST_ID, res2.ctx.reqid())
         .body(body_stream(stream))?;
     Ok(ret)
 }
 
-async fn plain_events_json(
-    req: Requ,
-    evq: PlainEventsQuery,
-    ch_conf: ChannelTypeConfigGen,
-    ctx: &ReqCtx,
-    ncc: &NodeConfigCached,
-) -> Result<StreamResponse, Error> {
+async fn plain_events_json(req: Requ, res2: HandleRes2<'_>) -> Result<StreamResponse, Error> {
     let self_name = "plain_events_json";
-    debug!("{self_name}  {ch_conf:?}  {req:?}");
+    debug!("{self_name}  {:?}  {:?}", res2.ch_conf, req);
     let (_head, _body) = req.into_parts();
-    // TODO handle None case better and return 404
-    debug!("{self_name}  chconf_from_events_quorum: {ch_conf:?}");
-    let open_bytes = OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone());
-    let open_bytes = Arc::pin(open_bytes);
-    let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
     let item = streams::plaineventsjson::plain_events_json(
-        &evq,
-        ch_conf,
-        ctx,
-        &ncc.node_config.cluster,
-        open_bytes,
-        timeout_provider,
+        &res2.evq,
+        res2.ch_conf,
+        res2.ctx,
+        &res2.ncc.node_config.cluster,
+        res2.open_bytes,
+        res2.timeout_provider,
     )
     .await;
     debug!("{self_name}  returned  {}", item.is_ok());
@@ -252,7 +235,7 @@ async fn plain_events_json(
         CollectResult::Some(item) => {
             let ret = response(StatusCode::OK)
                 .header(CONTENT_TYPE, APP_JSON)
-                .header(HEADER_NAME_REQUEST_ID, ctx.reqid())
+                .header(HEADER_NAME_REQUEST_ID, res2.ctx.reqid())
                 .body(ToJsonBody::from(item.into_bytes()).into_body())?;
             debug!("{self_name}  response created");
             Ok(ret)
@@ -261,9 +244,48 @@ async fn plain_events_json(
             let ret = error_status_response(
                 StatusCode::GATEWAY_TIMEOUT,
                 format!("no data within timeout"),
-                ctx.reqid(),
+                res2.ctx.reqid(),
             );
             Ok(ret)
         }
+    }
+}
+
+struct HandleRes2<'a> {
+    logspan: Span,
+    evq: PlainEventsQuery,
+    ch_conf: ChannelTypeConfigGen,
+    open_bytes: Pin<Arc<OpenBoxedBytesViaHttp>>,
+    timeout_provider: Box<dyn StreamTimeout2>,
+    #[allow(unused)]
+    pgqueue: &'a PgQueue,
+    ctx: &'a ReqCtx,
+    ncc: &'a NodeConfigCached,
+}
+
+impl<'a> HandleRes2<'a> {
+    async fn new(
+        ctx: &'a ReqCtx,
+        logspan: Span,
+        evq: PlainEventsQuery,
+        pgqueue: &'a PgQueue,
+        ncc: &'a NodeConfigCached,
+    ) -> Result<Self, Error> {
+        let ch_conf = chconf_from_events_quorum(&evq, ctx, pgqueue, ncc)
+            .await?
+            .ok_or_else(|| Error::ChannelNotFound)?;
+        let open_bytes = Arc::pin(OpenBoxedBytesViaHttp::new(ncc.node_config.cluster.clone()));
+        let timeout_provider = streamio::streamtimeout::StreamTimeout::boxed();
+        let ret = Self {
+            logspan,
+            evq,
+            ch_conf,
+            open_bytes,
+            timeout_provider,
+            pgqueue,
+            ctx,
+            ncc,
+        };
+        Ok(ret)
     }
 }

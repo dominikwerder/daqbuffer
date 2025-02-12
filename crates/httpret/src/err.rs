@@ -114,3 +114,4 @@ impl Convable for nodenet::channelconfig::Error {}
 impl Convable for query::api4::Error {}
 impl Convable for query::api4::events::Error {}
 impl Convable for netpod::Error {}
+impl Convable for crate::http3::Error {}

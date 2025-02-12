@@ -8,14 +8,14 @@ edition = "2021"
 path = "src/taskrun.rs"
 
 [dependencies]
-tokio = { version = "1.38.0", features = ["full", "tracing", "time"] }
-futures-util = "0.3.28"
-tracing = "0.1.40"
+tokio = { version = "1.43.0", features = ["full", "tracing", "time"] }
+futures-util = "0.3.31"
+tracing = "0.1.41"
 tracing-log = "0.2.0"
-tracing-subscriber = { version = "0.3.18", features = ["fmt", "time"] }
+tracing-subscriber = { version = "0.3.19", features = ["fmt", "time"] }
 time = { version = "0.3", features = ["formatting"] }
-backtrace = "0.3.71"
-chrono = "0.4.38"
+backtrace = "0.3.74"
+chrono = "0.4.39"
 daqbuf-err = { path = "../../../daqbuf-err" }
 
 
