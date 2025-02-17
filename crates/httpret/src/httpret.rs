@@ -160,7 +160,7 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
     let shared_res = Arc::new(shared_res);
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", ncc.node.listen(), ncc.node.port))?;
-    let http3 = http3::Http3Support::new(bind_addr.clone()).await?;
+    let http3 = http3::Http3Support::new_or_dummy(bind_addr.clone()).await?;
     // tokio::net::TcpSocket::new_v4()?.listen(200)?
     let listener = TcpListener::bind(bind_addr).await?;
     loop {

@@ -18,7 +18,7 @@ pub async fn create_scy_session(scyconf: &ScyllaConfig) -> Result<Arc<ScySession
 }
 
 pub async fn create_scy_session_no_ks(scyconf: &ScyllaConfig) -> Result<ScySession, Error> {
-    warn!("creating scylla connection");
+    info!("creating scylla connection");
     let scy = scylla::SessionBuilder::new()
         .known_nodes(&scyconf.hosts)
         .default_execution_profile_handle(

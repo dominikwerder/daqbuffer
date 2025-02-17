@@ -1,3 +1,5 @@
+use bytes::Bytes;
+use http::StatusCode;
 use quinn;
 use quinn::crypto::rustls::QuicServerConfig;
 use quinn::Endpoint;
@@ -12,6 +14,8 @@ use std::task::Context;
 use std::task::Poll;
 use taskrun::tokio;
 
+const EARLY_DATA_MAX: u32 = u32::MAX;
+
 macro_rules! info { ($($arg:expr),*) => ( if true { netpod::log::info!($($arg),*); } ); }
 
 autoerr::create_error_v1!(
@@ -19,6 +23,12 @@ autoerr::create_error_v1!(
     enum variants {
         NoRuntime,
         IO(#[from] std::io::Error),
+        H3(#[from] h3::Error),
+        Http(#[from] http::Error),
+        Pem(#[from] rustls::pki_types::pem::Error),
+        Rustls(#[from] rustls::Error),
+        NoInitialCipherSuite(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
+        QuinnConnection(#[from] quinn::ConnectionError),
     },
 );
 
@@ -27,58 +37,61 @@ pub struct Http3Support {
 }
 
 impl Http3Support {
-    pub async fn new(bind_addr: SocketAddr) -> Result<Self, Error> {
-        let key = match PemObject::from_pem_file("key.pem") {
-            Ok(x) => x,
-            Err(e) => {
-                info!("key error {}", e);
-                return Ok(Self::dummy());
-            }
-        };
-        let cert = match PemObject::from_pem_file("cert.pem") {
-            Ok(x) => x,
-            Err(e) => {
-                info!("cert error {}", e);
-                return Ok(Self::dummy());
-            }
-        };
-        let conf = EndpointConfig::default();
-        let mut tls_conf = match rustls::ServerConfig::builder()
+    pub async fn new_or_dummy(bind_addr: SocketAddr) -> Result<Self, Error> {
+        Ok(Self::new(bind_addr).await.unwrap_or_else(|e| {
+            info!("error {}", e);
+            Self::dummy()
+        }))
+    }
+
+    fn dummy() -> Self {
+        Self { ep: None }
+    }
+
+    async fn new(bind_addr: SocketAddr) -> Result<Self, Error> {
+        let key = PemObject::from_pem_file("key.pem")?;
+        let cert = PemObject::from_pem_file("cert.pem")?;
+        let mut tls_conf = rustls::ServerConfig::builder()
             .with_no_client_auth()
-            .with_single_cert(vec![cert], key)
-        {
-            Ok(x) => x,
-            Err(e) => {
-                info!("tls config error {}", e);
-                return Ok(Self::dummy());
-            }
-        };
-        tls_conf.alpn_protocols = vec![b"h3".to_vec()];
-        tls_conf.max_early_data_size = u32::MAX;
+            .with_single_cert(vec![cert], key)?;
+        tls_conf.alpn_protocols = vec![b"HTTP/3".to_vec(), b"h3".to_vec()];
+        tls_conf.max_early_data_size = EARLY_DATA_MAX;
         let tls_conf = tls_conf;
-        let v = match QuicServerConfig::try_from(tls_conf) {
-            Ok(x) => x,
-            Err(e) => {
-                info!("config error {}", e);
-                return Ok(Self::dummy());
-            }
-        };
+        let v = QuicServerConfig::try_from(tls_conf)?;
+        let quic_conf = Arc::new(v);
+        let conf_srv = quinn::ServerConfig::with_crypto(quic_conf);
+        let ep2 = Endpoint::server(conf_srv, bind_addr)?;
+        {
+            let ep = ep2.clone();
+            tokio::task::spawn(Self::accept(ep));
+        }
+        let ret = Self { ep: Some(ep2) };
+        Ok(ret)
+    }
+
+    async fn new_plain_quic(bind_addr: SocketAddr) -> Result<Self, Error> {
+        let key = PemObject::from_pem_file("key.pem")?;
+        let cert = PemObject::from_pem_file("cert.pem")?;
+        let conf = EndpointConfig::default();
+        let mut tls_conf = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert], key)?;
+        tls_conf.alpn_protocols = vec![b"h3".to_vec()];
+        tls_conf.max_early_data_size = EARLY_DATA_MAX;
+        let tls_conf = tls_conf;
+        let v = QuicServerConfig::try_from(tls_conf)?;
         let quic_conf = Arc::new(v);
         let conf_srv = quinn::ServerConfig::with_crypto(quic_conf);
         let sock = std::net::UdpSocket::bind(bind_addr)?;
         info!("h3 sock {:?}", sock);
         let rt = quinn::default_runtime().ok_or_else(|| Error::NoRuntime)?;
-        let ep = Endpoint::new(conf, Some(conf_srv), sock, rt)?;
+        let ep1 = Endpoint::new(conf, Some(conf_srv.clone()), sock, rt)?;
         {
-            let ep = ep.clone();
+            let ep = ep1.clone();
             tokio::task::spawn(Self::accept(ep));
         }
-        let ret = Self { ep: Some(ep) };
+        let ret = Self { ep: Some(ep1) };
         Ok(ret)
-    }
-
-    fn dummy() -> Self {
-        Self { ep: None }
     }
 
     pub async fn wait_idle(self) -> () {
@@ -95,37 +108,39 @@ impl Http3Support {
         }
     }
 
-    async fn handle_incoming(inc: Incoming) {
-        info!("new incoming {:?}", inc.remote_address());
-        let conn = match inc.await {
-            Ok(x) => x,
+    async fn handle_incoming(inc: Incoming) -> Result<(), Error> {
+        match Self::handle_incoming_inner(inc).await {
+            Ok(x) => Ok(x),
             Err(e) => {
-                info!("connection error {}", e);
-                return;
+                info!("error handle_connection {}", e);
+                Err(e)
             }
-        };
-        let fut1 = {
-            let conn = conn.clone();
-            async move {
-                let bi = conn.accept_bi().await;
-                info!("got bi {:?}", bi);
-                match bi {
-                    Ok(mut v) => {
-                        v.0.write(b"some-data").await;
-                    }
-                    Err(e) => {}
-                }
-            }
-        };
-        let fut2 = {
-            let conn = conn.clone();
-            async move {
-                let uni = conn.accept_uni().await;
-                info!("got uni {:?}", uni);
-            }
-        };
-        tokio::spawn(fut1);
-        tokio::spawn(fut2);
+        }
+    }
+
+    async fn handle_incoming_inner(inc: Incoming) -> Result<(), Error> {
+        let addr_remote = inc.remote_address();
+        info!("new incoming {:?}", addr_remote);
+        let conn1 = inc.accept()?.await?;
+        let conn2 = h3_quinn::Connection::new(conn1);
+        let mut conn3 = h3::server::builder().build::<_, Bytes>(conn2).await?;
+        while let Some((req, mut stream)) = conn3.accept().await? {
+            let (head, _body) = req.into_parts();
+            info!(
+                "see request  {}  {:?}  {:?}  {:?}",
+                addr_remote, head.method, head.uri, head.headers
+            );
+            let res = http::Response::builder()
+                .version(http::Version::HTTP_3)
+                .status(StatusCode::OK)
+                .header("x-daqbuf-tmp", "8e4b217")
+                .body(())?;
+            stream.send_response(res).await?;
+            stream.send_data(Bytes::from_static(b"2025-02-05T16:37:12Z")).await?;
+            stream.finish().await?;
+            info!("response sent  {}", addr_remote);
+        }
+        Ok(())
     }
 }
 
