@@ -258,14 +258,16 @@ where
         match h {
             Ok(k) => k,
             Err(e) => {
-                error!("Cont<F>  catch_unwind  {e:?}");
-                match e.downcast_ref::<Error>() {
-                    Some(e) => {
-                        error!("Cont<F>  catch_unwind  is Error: {e:?}");
-                    }
-                    None => {}
+                if let Some(v) = e.downcast_ref::<Error>() {
+                    error!("Cont<F>  catch_unwind  is Error: {}", v);
+                } else if let Some(v) = e.downcast_ref::<String>() {
+                    error!("Cont<F>  catch_unwind  is String: {}", v);
+                } else if let Some(v) = e.downcast_ref::<&str>() {
+                    error!("Cont<F>  catch_unwind  is &str: {}", v);
+                } else {
+                    error!("Cont<F>  catch_unwind  {:?}", e);
                 }
-                Poll::Ready(Err(Error::with_msg_no_trace(format!("{e:?}"))))
+                Poll::Ready(Err(Error::with_msg_no_trace(format!("{:?}", e))))
             }
         }
     }
