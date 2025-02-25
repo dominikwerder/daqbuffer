@@ -240,10 +240,14 @@ async fn plain_events_json(req: Requ, res2: HandleRes2<'_>) -> Result<StreamResp
             debug!("{self_name}  response created");
             Ok(ret)
         }
+        CollectResult::Empty => {
+            let ret = error_status_response(StatusCode::NO_CONTENT, format!("no content"), res2.ctx.reqid());
+            Ok(ret)
+        }
         CollectResult::Timeout => {
             let ret = error_status_response(
                 StatusCode::GATEWAY_TIMEOUT,
-                format!("no data within timeout"),
+                format!("no content within timeout"),
                 res2.ctx.reqid(),
             );
             Ok(ret)

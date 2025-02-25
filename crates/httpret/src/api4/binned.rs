@@ -232,7 +232,7 @@ async fn binned_json_single(
 ) -> Result<StreamResponse, Error> {
     // TODO unify with binned_json_framed
     debug!("binned_json_single");
-    let item = streams::timebinnedjson::timebinned_json(
+    let res = streams::timebinnedjson::timebinned_json(
         res2.query,
         res2.ch_conf,
         ctx,
@@ -241,7 +241,7 @@ async fn binned_json_single(
         res2.timeout_provider,
     )
     .await?;
-    match item {
+    match res {
         CollectResult::Some(item) => {
             let ret = response(StatusCode::OK)
                 .header(CONTENT_TYPE, APP_JSON)
@@ -249,10 +249,14 @@ async fn binned_json_single(
                 .body(ToJsonBody::from(item.into_bytes()).into_body())?;
             Ok(ret)
         }
+        CollectResult::Empty => {
+            let ret = error_status_response(StatusCode::NO_CONTENT, format!("no content"), ctx.reqid());
+            Ok(ret)
+        }
         CollectResult::Timeout => {
             let ret = error_status_response(
                 StatusCode::GATEWAY_TIMEOUT,
-                format!("no data within timeout"),
+                format!("no content within timeout"),
                 ctx.reqid(),
             );
             Ok(ret)
