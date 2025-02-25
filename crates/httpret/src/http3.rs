@@ -4,6 +4,7 @@ use h3_quinn::quinn::crypto::rustls::QuicServerConfig;
 use h3_quinn::BidiStream;
 use http::Request;
 use http::StatusCode;
+use netpod::log;
 use quinn;
 use quinn::Endpoint;
 use quinn::EndpointConfig;
@@ -21,7 +22,9 @@ use taskrun::tokio;
 
 const EARLY_DATA_MAX: u32 = u32::MAX * 0;
 
-macro_rules! info { ($($arg:expr),*) => ( if true { netpod::log::info!($($arg),*); } ); }
+macro_rules! info { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
+
+macro_rules! debug { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
 
 #[derive(Debug)]
 struct TicketerCustom {}
@@ -66,7 +69,7 @@ pub struct Http3Support {
 impl Http3Support {
     pub async fn new_or_dummy(bind_addr: SocketAddr) -> Result<Self, Error> {
         Ok(Self::new(bind_addr).await.unwrap_or_else(|e| {
-            info!("error {}", e);
+            debug!("error {}", e);
             Self::dummy()
         }))
     }
@@ -79,10 +82,10 @@ impl Http3Support {
         let key = PemObject::from_pem_file("key.pem")?;
         let cert = PemObject::from_pem_file("cert.pem")?;
         let mut provider = rustls::crypto::ring::default_provider();
-        info!("provider default {:?}", provider);
+        debug!("provider default {:?}", provider);
         provider.cipher_suites = rustls::crypto::ring::ALL_CIPHER_SUITES.to_vec();
         provider.kx_groups = rustls::crypto::ring::ALL_KX_GROUPS.to_vec();
-        info!("provider custom  {:?}", provider);
+        debug!("provider custom  {:?}", provider);
         provider.install_default().map_err(|_| Error::RingInstallDefault)?;
         let mut tls_conf = rustls::ServerConfig::builder()
             .with_no_client_auth()
@@ -122,7 +125,7 @@ impl Http3Support {
         let quic_conf = Arc::new(v);
         let conf_srv = quinn::ServerConfig::with_crypto(quic_conf);
         let sock = std::net::UdpSocket::bind(bind_addr)?;
-        info!("h3 sock {:?}", sock);
+        debug!("h3 sock {:?}", sock);
         let rt = quinn::default_runtime().ok_or_else(|| Error::NoRuntime)?;
         let ep1 = Endpoint::new(conf, Some(conf_srv.clone()), sock, rt)?;
         tokio::task::spawn(Self::accept(ep1.clone()));
@@ -138,32 +141,33 @@ impl Http3Support {
     }
 
     async fn accept(ep: Endpoint) {
-        info!("accepting h3");
+        debug!("accepting h3");
         while let Some(inc) = ep.accept().await {
             let addr_remote = inc.remote_address();
             tokio::spawn(Self::handle_incoming(inc, addr_remote));
         }
+        debug!("accepting h3  RETURN");
     }
 
     async fn handle_incoming(inc: Incoming, addr_remote: SocketAddr) -> Result<(), Error> {
-        info!("handle_incoming  {}", addr_remote);
+        debug!("handle_incoming  {}", addr_remote);
         match Self::handle_incoming_inner_2(inc, addr_remote).await {
             Ok(x) => Ok(x),
             Err(e) => {
-                info!("handle_incoming_inner_2 returns error {}", e);
+                debug!("handle_incoming_inner_2 returns error {}", e);
                 Err(e)
             }
         }
     }
 
     async fn handle_incoming_inner_1(inc: Incoming, addr_remote: SocketAddr) -> Result<(), Error> {
-        info!("handle_incoming_inner_1  new incoming {:?}", addr_remote);
+        debug!("handle_incoming_inner_1  new incoming {:?}", addr_remote);
         let conn1 = inc.accept()?.await?;
         let conn2 = h3_quinn::Connection::new(conn1);
         let mut conn3 = h3::server::builder().build::<_, Bytes>(conn2).await?;
         while let Some((req, mut stream)) = conn3.accept().await? {
             let (head, _body) = req.into_parts();
-            info!(
+            debug!(
                 "see request  {}  {:?}  {:?}  {:?}",
                 addr_remote, head.method, head.uri, head.headers
             );
@@ -175,35 +179,35 @@ impl Http3Support {
             stream.send_response(res).await?;
             stream.send_data(Bytes::from_static(b"2025-02-05T16:37:12Z")).await?;
             stream.finish().await?;
-            info!("response sent  {}", addr_remote);
+            debug!("response sent  {}", addr_remote);
         }
         Ok(())
     }
 
     async fn handle_incoming_inner_2(inc: Incoming, addr_remote: SocketAddr) -> Result<(), Error> {
         let selfname = "handle_incoming_inner_2";
-        info!("{}  new incoming {:?}", selfname, addr_remote);
+        debug!("{}  new incoming {:?}", selfname, addr_remote);
         let conn1 = inc.await?;
-        info!("{}  connected  {:?}", selfname, addr_remote);
+        debug!("{}  connected  {:?}", selfname, addr_remote);
         let conn2 = h3_quinn::Connection::new(conn1);
         let mut conn3 = h3::server::Connection::new(conn2).await?;
-        info!("{}  h3 Connection awaited  {:?}", selfname, addr_remote);
+        debug!("{}  h3 Connection awaited  {:?}", selfname, addr_remote);
         // let mut conn3 = h3::server::builder().build::<_, Bytes>(conn2).await?;
         loop {
             break match conn3.accept().await {
                 Ok(Some((req, stream))) => {
-                    info!("in h3 loop  req {:?}", req);
+                    debug!("in h3 loop  req {:?}", req);
                     tokio::spawn(async move {
                         let x = Self::handle_req(req, stream, addr_remote).await;
-                        info!("handle_req  return {:?}", x);
+                        debug!("handle_req  return {:?}", x);
                     });
                     continue;
                 }
                 Ok(None) => {
-                    info!("in h3 loop None");
+                    debug!("in h3 loop None");
                 }
                 Err(e) => {
-                    info!("in h3 loop error {}", e);
+                    debug!("in h3 loop error {}", e);
                 }
             };
         }
@@ -218,7 +222,7 @@ impl Http3Support {
         let method = req.method();
         let uri = req.uri();
         let headers = req.headers();
-        info!("see request  {}  {:?}  {:?}  {:?}", addr_remote, method, uri, headers);
+        debug!("see request  {}  {:?}  {:?}  {:?}", addr_remote, method, uri, headers);
         let res = http::Response::builder()
             // .version(http::Version::HTTP_3)
             .status(StatusCode::OK)
@@ -227,7 +231,7 @@ impl Http3Support {
         stream.send_response(res).await?;
         // stream.send_data(Bytes::from_static(b"2025-02-05T16:37:12Z")).await?;
         // stream.finish().await?;
-        info!("response sent  {}", addr_remote);
+        debug!("response sent  {}", addr_remote);
         Ok(())
     }
 }
