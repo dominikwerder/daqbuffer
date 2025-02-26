@@ -9,6 +9,9 @@ curl "https://data-api.psi.ch/api/4/binned?backend=sf-databuffer&channelName=S10
 Parameters:
 - `backend`: the backend that the channel exists in, e.g. `sf-databuffer`.
 - `channelName`: the name of the channel.
+- `seriesId`: instead of a channel name, can specify the (unique within backend) series id
+  as returned by channel search.
+  Note that it is an error to provide both `channelName` and `seriesId`.
 - `begDate`: start of the time range, inclusive. In ISO format e.g. `2024-02-15T12:41:00Z`.
 - `endDate`: end of the time range, exclusive.
 - `binWidth`: requested width of the bins, given with a unit suffix e.g. `10s` for 10 seconds, `2m` for 2 minutes,
