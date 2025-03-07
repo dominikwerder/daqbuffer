@@ -215,7 +215,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                             sr = g.parent();
                         }
                     }
-                    allow = true;
+                    // allow = true;
                     allow
                 } else {
                     false
@@ -251,7 +251,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
                             sr = g.parent();
                         }
                     }
-                    allow = true;
+                    // allow = true;
                     allow
                 } else {
                     false
@@ -286,14 +286,14 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
 
         let reg = tracing_subscriber::registry();
 
-        #[cfg(DISABLED_CONSOLE)]
+        #[cfg(feature = "DISABLED_CONSOLE")]
         let reg = {
             let (console_layer, console_server) = console_subscriber::ConsoleLayer::builder().build();
             tokio::spawn(console_server.serve());
             reg.with(console_layer)
         };
 
-        #[cfg(DISABLED_CONSOLE)]
+        #[cfg(feature = "DISABLED_CONSOLE")]
         let reg = {
             let pid = std::process::id();
             // let cspn = format!("/tmp/daqbuffer.tokio.console.pid.{pid}");
@@ -315,7 +315,7 @@ fn tracing_init_inner(mode: TracingMode) -> Result<(), Error> {
             format!("{e}")
         })?;
     }
-    #[cfg(DISABLED_LOKI)]
+    #[cfg(feature = "DISABLED_LOKI")]
     // TODO tracing_loki seems not well composable, try open telemetry instead.
     if false {
         /*let fmt_layer = tracing_subscriber::fmt::Layer::new()

@@ -95,5 +95,6 @@ async fn get_json_common(
         return Err(Error::with_msg(format!("expect_bin_count {}", expect_bin_count)));
     }
     let ret = DataResult { avgs };
+    let _ = &ret.avgs;
     Ok(ret)
 }

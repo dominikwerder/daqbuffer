@@ -33,6 +33,7 @@ pub async fn fetch_events_json(query: PlainEventsQuery, cluster: &Cluster) -> Re
 }
 
 // TODO improve by a more information-rich return type.
+#[allow(unused)]
 pub async fn fetch_binned_json(query: BinnedQuery, cluster: &Cluster) -> Result<JsonValue, Error> {
     let ctx = ReqCtx::for_test();
     let t1 = Utc::now();

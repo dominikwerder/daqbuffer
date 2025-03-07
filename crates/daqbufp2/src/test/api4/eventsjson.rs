@@ -2,7 +2,6 @@ use crate::nodes::require_test_hosts_running;
 use crate::test::api4::common::fetch_events_json;
 use chrono::Utc;
 use daqbuf_err::Error;
-use items_0::WithLen;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::AppendToUrl;
@@ -36,7 +35,8 @@ fn events_plain_json_00() -> Result<(), Error> {
             "1970-01-01T00:20:04.000Z",
             "1970-01-01T00:21:10.000Z",
         )?;
-        let jsv = fetch_events_json(query, cluster).await?;
+        // TODO
+        let _jsv = fetch_events_json(query, cluster).await?;
         // let res: EventsDim0CollectorOutput<i32> = serde_json::from_value(jsv)?;
         // Tim-weighted uses one event before requested range:
         // assert_eq!(res.len(), 133);
@@ -51,7 +51,7 @@ fn events_plain_json_02_range_incomplete() -> Result<(), Error> {
     let fut = async {
         let rh = require_test_hosts_running()?;
         let cluster = &rh.cluster;
-        let jsv = events_plain_json(
+        let _jsv = events_plain_json(
             SfDbChannel::from_name(TEST_BACKEND, "test-gen-i32-dim0-v01"),
             "1970-01-03T23:59:55.000Z",
             "1970-01-04T00:00:01.000Z",

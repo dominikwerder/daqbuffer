@@ -5,11 +5,12 @@ use std::task::Context;
 use std::task::Poll;
 use tokio::io::AsyncRead;
 
-#[derive(Debug, thiserror::Error)]
-#[cstm(name = "TcpReadAsBytes")]
-pub enum Error {
-    IO(#[from] std::io::Error),
-}
+autoerr::create_error_v1!(
+    name(Error, "TcpReadAsBytes"),
+    enum variants {
+        IO(#[from] std::io::Error),
+    },
+);
 
 pub struct TcpReadAsBytes<INP> {
     inp: INP,

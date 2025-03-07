@@ -10,7 +10,7 @@ use httpclient::http;
 use httpclient::hyper::StatusCode;
 use httpclient::hyper::Uri;
 use items_0::streamitem::sitem_data;
-use items_0::streamitem::sitem_err2_from_string;
+// use items_0::streamitem::sitem_err2_from_string;
 use items_2::framable::Framable;
 use netpod::log::*;
 use netpod::Cluster;

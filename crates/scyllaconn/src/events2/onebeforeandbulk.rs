@@ -1,5 +1,3 @@
-use daqbuf_err as err;
-use err::thiserror;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::merge::DrainIntoDstResult;
@@ -13,9 +11,9 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-macro_rules! trace_transition { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
+macro_rules! trace_transition { ($($arg:expr),*) => ( if true { trace!($($arg),*); } ) }
 
-macro_rules! trace_emit { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
+macro_rules! trace_emit { ($($arg:expr),*) => ( if true { trace!($($arg),*); } ) }
 
 macro_rules! tracer_poll_enter {
     ($self:expr) => {
@@ -33,18 +31,18 @@ macro_rules! tracer_loop_enter {
     };
 }
 
-#[allow(unused)]
-macro_rules! debug_fetch { ($($arg:tt)*) => ( if true { debug!($($arg)*); } ) }
+macro_rules! debug_fetch { ($($arg:expr),*) => ( if true { debug!($($arg),*); } ) }
 
-#[derive(Debug, thiserror::Error)]
-#[cstm(name = "EventsOneBeforeAndBulk")]
-pub enum Error {
-    Unordered,
-    Logic,
-    Input(Box<dyn std::error::Error + Send>),
-    LimitPoll,
-    LimitLoop,
-}
+autoerr::create_error_v1!(
+    name(Error, "EventsOneBeforeAndBulk"),
+    enum variants {
+        Unordered,
+        Logic,
+        Input(Box<dyn std::error::Error + Send>),
+        LimitPoll,
+        LimitLoop,
+    },
+);
 
 #[derive(Debug)]
 pub enum Output<T> {
@@ -164,7 +162,7 @@ where
                                 }
                                 // Separate events into before and bulk
                                 let ppp = MergeableTy::find_lowest_index_ge(&item, self.ts0);
-                                trace_transition!("partition_point  {ppp:?}  {n:?}", n = item.len());
+                                trace_transition!("partition_point  {:?}  {:?}", ppp, item.len());
                                 if let Some(pp) = ppp {
                                     if pp == 0 {
                                         // all entries are bulk
@@ -172,12 +170,22 @@ where
                                         self.state = State::Bulk;
                                         if let Some(before) = self.consume_buf_get_latest() {
                                             self.out.push_back(item);
+                                            let emit_len = before.len();
                                             let item = Output::Before(before);
-                                            trace_emit!("State::Begin  Before  {}  emit {:?}", self.dbgname, item);
+                                            trace_emit!(
+                                                "State::Begin  Before  {}  emit_len {}",
+                                                self.dbgname,
+                                                emit_len
+                                            );
                                             Ready(Some(Ok(item)))
                                         } else {
+                                            let emit_len = item.len();
                                             let item = Output::Bulk(item);
-                                            trace_emit!("State::Begin  Bulk    {}  emit {:?}", self.dbgname, item);
+                                            trace_emit!(
+                                                "State::Begin  Bulk    {}  emit_len {}",
+                                                self.dbgname,
+                                                emit_len
+                                            );
                                             Ready(Some(Ok(item)))
                                         }
                                     } else {
@@ -189,19 +197,21 @@ where
                                                 DrainIntoDstResult::Done => {
                                                     if let Some(before) = self.consume_buf_get_latest() {
                                                         self.out.push_back(item);
+                                                        let emit_len = before.len();
                                                         let item = Output::Before(before);
                                                         trace_emit!(
-                                                            "State::Begin  Before  {}  emit {:?}",
+                                                            "State::Begin  Before  {}  emit_len {}",
                                                             self.dbgname,
-                                                            item
+                                                            emit_len
                                                         );
                                                         Ready(Some(Ok(item)))
                                                     } else {
+                                                        let emit_len = item.len();
                                                         let item = Output::Bulk(item);
                                                         trace_emit!(
-                                                            "State::Begin  Bulk    {}  emit {:?}",
+                                                            "State::Begin  Bulk    {}  emit_len {}",
                                                             self.dbgname,
-                                                            item
+                                                            emit_len
                                                         );
                                                         Ready(Some(Ok(item)))
                                                     }
@@ -214,19 +224,21 @@ where
                                                     self.buf = Some(buf);
                                                     if let Some(before) = self.consume_buf_get_latest() {
                                                         self.out.push_back(item);
+                                                        let emit_len = before.len();
                                                         let item = Output::Before(before);
                                                         trace_emit!(
-                                                            "State::Begin  Before  {}  emit {:?}",
+                                                            "State::Begin  Before  {}  emit_len {}",
                                                             self.dbgname,
-                                                            item
+                                                            emit_len
                                                         );
                                                         Ready(Some(Ok(item)))
                                                     } else {
+                                                        let emit_len = item.len();
                                                         let item = Output::Bulk(item);
                                                         trace_emit!(
-                                                            "State::Begin  Bulk    {}  emit {:?}",
+                                                            "State::Begin  Bulk    {}  emit_len {}",
                                                             self.dbgname,
-                                                            item
+                                                            emit_len
                                                         );
                                                         Ready(Some(Ok(item)))
                                                     }
@@ -270,8 +282,9 @@ where
                             self.state = State::Done;
                             trace_transition!("transition from Begin to end of stream");
                             if let Some(before) = self.consume_buf_get_latest() {
+                                let emit_len = before.len();
                                 let item = Output::Before(before);
-                                trace_emit!("State::Begin  EOS  {}  emit {:?}", self.dbgname, item);
+                                trace_emit!("State::Begin  EOS  {}  emit_len {}", self.dbgname, emit_len);
                                 Ready(Some(Ok(item)))
                             } else {
                                 trace_emit!("State::Begin  EOS  {}  emit None", self.dbgname);
@@ -307,8 +320,9 @@ where
                                         if item.len() == 0 {
                                             self.seen_empty_during_bulk = true;
                                         }
+                                        let item_len = item.len();
                                         let item = Output::Bulk(item);
-                                        trace_emit!("State::Bulk  data  {}  emit {:?}", self.dbgname, item);
+                                        trace_emit!("State::Bulk  data  {}  item_len {}", self.dbgname, item_len);
                                         Ready(Some(Ok(item)))
                                     }
                                 }

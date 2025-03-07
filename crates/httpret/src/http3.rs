@@ -11,18 +11,12 @@ use quinn::EndpointConfig;
 use quinn::Incoming;
 use rustls::pki_types::pem::PemObject;
 use rustls::server::ProducesTickets;
-use std::future::Future;
 use std::net::SocketAddr;
-use std::pin::Pin;
 use std::sync::Arc;
-use std::task::Context;
-use std::task::Poll;
 use std::time::Duration;
 use taskrun::tokio;
 
 const EARLY_DATA_MAX: u32 = u32::MAX * 0;
-
-macro_rules! info { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
 
 macro_rules! debug { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
 
@@ -38,11 +32,11 @@ impl ProducesTickets for TicketerCustom {
         60 * 60 * 24
     }
 
-    fn encrypt(&self, plain: &[u8]) -> Option<Vec<u8>> {
+    fn encrypt(&self, _plain: &[u8]) -> Option<Vec<u8>> {
         todo!()
     }
 
-    fn decrypt(&self, cipher: &[u8]) -> Option<Vec<u8>> {
+    fn decrypt(&self, _cipher: &[u8]) -> Option<Vec<u8>> {
         todo!()
     }
 }
@@ -111,6 +105,7 @@ impl Http3Support {
         Ok(ret)
     }
 
+    #[allow(unused)]
     async fn new_plain_quic(bind_addr: SocketAddr) -> Result<Self, Error> {
         let key = PemObject::from_pem_file("key.pem")?;
         let cert = PemObject::from_pem_file("cert.pem")?;
@@ -160,6 +155,7 @@ impl Http3Support {
         }
     }
 
+    #[allow(unused)]
     async fn handle_incoming_inner_1(inc: Incoming, addr_remote: SocketAddr) -> Result<(), Error> {
         debug!("handle_incoming_inner_1  new incoming {:?}", addr_remote);
         let conn1 = inc.accept()?.await?;
@@ -184,6 +180,7 @@ impl Http3Support {
         Ok(())
     }
 
+    #[allow(unused)]
     async fn handle_incoming_inner_2(inc: Incoming, addr_remote: SocketAddr) -> Result<(), Error> {
         let selfname = "handle_incoming_inner_2";
         debug!("{}  new incoming {:?}", selfname, addr_remote);

@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 use std::time::SystemTime;
 
+#[allow(unused)]
 pub struct Dummy(u32);
 
 pub enum CachePortal<V> {

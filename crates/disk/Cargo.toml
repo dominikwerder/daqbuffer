@@ -42,3 +42,6 @@ streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 streamio = { path = "../streamio" }
 httpclient = { path = "../httpclient" }
 bitshuffle = { path = "../../../daqbuf-bitshuffle", package = "daqbuf-bitshuffle" }
+
+[features]
+DISABLED = []

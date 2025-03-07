@@ -20,7 +20,6 @@ crc32fast = "1.4.2"
 byteorder = "1.5.0"
 async-channel = "1.9.0"
 rand_xoshiro = "0.6.0"
-thiserror = "=0.0.1"
 autoerr = "0.0.3"
 chrono = { version = "0.4.39", features = ["serde"] }
 netpod = { path = "../../../daqbuf-netpod", package = "daqbuf-netpod" }
@@ -35,6 +34,3 @@ http-body-util = "0.1.2"
 
 [dev-dependencies]
 taskrun = { path = "../taskrun" }
-
-[patch.crates-io]
-thiserror = { git = "https://github.com/dominikwerder/thiserror.git", branch = "cstm" }

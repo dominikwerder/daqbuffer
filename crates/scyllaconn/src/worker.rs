@@ -1,5 +1,5 @@
 use crate::conn::create_scy_session_no_ks;
-use crate::events::ReadJobTrace;
+use crate::events2::events::ReadJobTrace;
 use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
@@ -28,7 +28,7 @@ autoerr::create_error_v1!(
     enum variants {
         ScyllaConnection(err::Error),
         Prepare(#[from] crate::events2::prepare::Error),
-        EventsQuery(#[from] crate::events::Error),
+        Events(#[from] crate::events2::events::Error),
         Msp(#[from] crate::events2::msp::Error),
         ChannelSend,
         ChannelRecv,
@@ -270,7 +270,9 @@ impl ScyllaWorker {
                             // TODO count for stats
                         }
                     }
-                    Job::WriteCacheF32(_, _, tx) => {
+                    Job::WriteCacheF32(a, b, tx) => {
+                        let _ = a;
+                        let _ = b;
                         // let res = super::bincache::worker_write(series, bins, &stmts_cache, &scy).await;
                         let res = Err(streams::timebin::cached::reader::Error::TodoImpl);
                         if tx.send(res).await.is_err() {

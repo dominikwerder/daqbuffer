@@ -2,6 +2,7 @@ use crate::events2::prepare::StmtsCache;
 use crate::events2::prepare::StmtsEvents;
 use crate::log::*;
 use crate::worker::ScyllaQueue;
+use daqbuf_series::msp::PrebinnedPartitioning;
 use futures_util::TryStreamExt;
 use items_0::merge::MergeableTy;
 use items_2::binning::container_bins::ContainerBins;
@@ -11,7 +12,6 @@ use netpod::TsNano;
 use scylla::Session as ScySession;
 use std::ops::Range;
 use streams::timebin::cached::reader::BinsReadRes;
-use daqbuf_series::msp::PrebinnedPartitioning;
 
 async fn scylla_read_prebinned_f32(
     series: u64,
@@ -137,7 +137,7 @@ pub async fn worker_read(
     scy: &ScySession,
 ) -> Result<ContainerBins<f32, f32>, streams::timebin::cached::reader::Error> {
     let partt = PrebinnedPartitioning::try_from(bin_len)?;
-    let div = partt.msp_div();
+    let div = partt.patch_dt();
     let params = (
         series as i64,
         bin_len.ms() as i32,

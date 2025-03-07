@@ -83,7 +83,7 @@ impl EventDataHandler {
             .await
             .map_err(|_| EventDataError::InternalError)?;
         let (evsubq,) = nodenet::conn::events_parse_input_query(frames).map_err(|_| EventDataError::QueryParse)?;
-        debug!("{:?}", evsubq);
+        info!("{:?}", evsubq);
         let logspan = if evsubq.log_level() == "trace" {
             trace!("emit trace span");
             tracing::span!(tracing::Level::INFO, "log_span_trace")

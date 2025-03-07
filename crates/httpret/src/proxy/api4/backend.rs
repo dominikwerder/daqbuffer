@@ -9,7 +9,6 @@ use httpclient::Requ;
 use httpclient::StreamResponse;
 use netpod::ProxyConfig;
 use netpod::ReqCtx;
-use netpod::ServiceVersion;
 use std::collections::BTreeMap;
 
 pub struct BackendListHandler {}

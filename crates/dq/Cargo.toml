@@ -2,10 +2,7 @@
 name = "dq"
 version = "0.1.0"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
-edition = "2021"
-
-[lib]
-path = "src/dq.rs"
+edition = "2024"
 
 [dependencies]
 tokio = { version = "1.43.0", features = ["rt-multi-thread", "io-util", "net", "time", "sync", "fs"] }

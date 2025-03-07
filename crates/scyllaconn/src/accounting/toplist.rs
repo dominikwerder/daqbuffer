@@ -1,5 +1,4 @@
 use crate::log::*;
-use daqbuf_err as err;
 use futures_util::TryStreamExt;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;

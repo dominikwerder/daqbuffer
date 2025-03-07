@@ -123,7 +123,8 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
     }
     // let rawjh = taskrun::spawn(nodenet::conn::events_service(node_config.clone()));
     let (pgqueue, pgworker) = PgWorker::new(&ncc.node_config.cluster.database).await?;
-    let pgworker_jh = taskrun::spawn(async move {
+    // TODO use
+    let _pgworker_jh = taskrun::spawn(async move {
         let x = pgworker.work().await;
         match x {
             Ok(()) => {}
@@ -143,7 +144,8 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
                 error!("{e}");
                 RetrievalError::TextError(e.to_string())
             })?;
-        let scylla_worker_jh = taskrun::spawn(async move {
+        // TODO use
+        let _scylla_worker_jh = taskrun::spawn(async move {
             let x = scylla_worker.work().await;
             match x {
                 Ok(()) => {}

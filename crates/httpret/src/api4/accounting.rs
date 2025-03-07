@@ -14,7 +14,6 @@ use httpclient::IntoBody;
 use httpclient::Requ;
 use httpclient::StreamResponse;
 use httpclient::ToJsonBody;
-use items_2::accounting::AccountingEvents;
 use netpod::log::*;
 use netpod::req_uri_to_url;
 use netpod::ttl::RetentionTime;
@@ -23,7 +22,6 @@ use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
 use netpod::TsMs;
-use query::api4::AccountingIngestedBytesQuery;
 use query::api4::AccountingToplistQuery;
 use scyllaconn::accounting::toplist::UsageData;
 use serde::Deserialize;
@@ -57,6 +55,7 @@ impl AccountedIngested {
         self.shapes.push(shape);
     }
 
+    #[allow(unused)]
     fn sort_by_counts(&mut self) {
         let mut tmp: Vec<_> = self
             .counts
@@ -70,6 +69,7 @@ impl AccountedIngested {
         self.reorder_by_index_list(&tmp);
     }
 
+    #[allow(unused)]
     fn sort_by_bytes(&mut self) {
         let mut tmp: Vec<_> = self.bytes.iter().map(|&x| x).enumerate().map(|(i, x)| (x, i)).collect();
         tmp.sort_unstable();
@@ -85,6 +85,7 @@ impl AccountedIngested {
         self.shapes = tmp.iter().map(|&x| self.shapes[x].clone()).collect();
     }
 
+    #[allow(unused)]
     fn truncate(&mut self, len: usize) {
         self.names.truncate(len);
         self.counts.truncate(len);
@@ -273,12 +274,13 @@ async fn fetch_data(
     _ncc: &NodeConfigCached,
 ) -> Result<Toplist, Error> {
     let list_len_max = 10000000;
+    let _ = list_len_max;
     if let Some(scyqu) = &shared_res.scyqueue {
         let x = scyqu
             .accounting_read_ts(rt, ts)
             .await
             .map_err(|e| Error::with_msg_no_trace(e.to_string()))?;
-        let mut ret = resolve_usages(x, &shared_res.pgqueue).await?;
+        let ret = resolve_usages(x, &shared_res.pgqueue).await?;
         // ret.dim0.sort_by_bytes();
         // ret.dim1.sort_by_bytes();
         // ret.dim0.truncate(list_len_max);

@@ -32,3 +32,6 @@ items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
 streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
+
+[features]
+DISABLED = []

@@ -20,9 +20,7 @@ use netpod::timeunits::DAY;
 use netpod::timeunits::SEC;
 use netpod::ByteOrder;
 use netpod::Cluster;
-use netpod::Database;
 use netpod::DtNano;
-use netpod::FileIoBufferSize;
 use netpod::Node;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
@@ -98,8 +96,8 @@ fn raw_data_00() {
         eprintln!("written");
         con.shutdown().await.unwrap();
         eprintln!("shut down");
-
-        let (netin, netout) = con.into_split();
+        // TODO use?
+        let (netin, _netout) = con.into_split();
         let mut frames = InMemoryFrameStream::new(TcpReadAsBytes::new(netin), qu.inmem_bufcap());
         while let Some(frame) = frames.next().await {
             match frame {

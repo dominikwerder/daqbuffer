@@ -1,22 +1,19 @@
-use daqbuf_err as err;
-use err::thiserror;
-use err::ThisError;
 use netpod::ttl::RetentionTime;
 use scylla::prepared_statement::PreparedStatement;
 use scylla::Session;
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "ScyllaPrepare")]
-pub enum Error {
-    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-    ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
-    ScyllaTypeConv(#[from] scylla::cql_to_rust::FromRowError),
-    ScyllaWorker(Box<crate::worker::Error>),
-    MissingQuery(String),
-    RangeEndOverflow,
-    InvalidFuture,
-    TestError(String),
-}
+autoerr::create_error_v1!(
+    name(Error, "ScyllaPrepare"),
+    enum variants {
+        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+        ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaWorker(Box<crate::worker::Error>),
+        MissingQuery(String),
+        RangeEndOverflow,
+        InvalidFuture,
+        TestError(String),
+    },
+);
 
 #[derive(Debug)]
 pub struct StmtsLspShape {

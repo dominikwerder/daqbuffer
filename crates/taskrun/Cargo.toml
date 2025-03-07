@@ -22,6 +22,8 @@ daqbuf-err = { path = "../../../daqbuf-err" }
 [features]
 with-console = []
 #console-subscriber = { version = "0.3.0" }
+DISABLED_LOKI = []
+DISABLED_CONSOLE = []
 
 with-loki = []
 #tracing-loki = { version = "0.2.1", default-features = false, features = ["compat-0-2-1"] }
