@@ -79,6 +79,7 @@ pub struct StmtsEventsRt {
     lsp_fwd_ts: StmtsLspDir,
     lsp_bck_ts: StmtsLspDir,
     prebinned_f32: PreparedStatement,
+    bin_write_index_read: PreparedStatement,
 }
 
 impl StmtsEventsRt {
@@ -108,6 +109,10 @@ impl StmtsEventsRt {
 
     pub fn prebinned_f32(&self) -> &PreparedStatement {
         &self.prebinned_f32
+    }
+
+    pub fn bin_write_index_read(&self) -> &PreparedStatement {
+        &self.bin_write_index_read
     }
 }
 
@@ -228,6 +233,21 @@ async fn make_prebinned_f32(ks: &str, rt: &RetentionTime, scy: &Session) -> Resu
     Ok(qu)
 }
 
+async fn make_bin_write_index_read(ks: &str, rt: &RetentionTime, scy: &Session) -> Result<PreparedStatement, Error> {
+    let cql = format!(
+        concat!(
+            "select rt, lsp, binlen",
+            " from {}.{}bin_write_index_v03",
+            " where series = ? and pbp = ? and msp = ? and rt = ?",
+            " and lsp >= ? and lsp < ?",
+        ),
+        ks,
+        rt.table_prefix()
+    );
+    let qu = scy.prepare(cql).await?;
+    Ok(qu)
+}
+
 async fn make_rt(ks: &str, rt: &RetentionTime, scy: &Session) -> Result<StmtsEventsRt, Error> {
     let ret = StmtsEventsRt {
         ts_msp_fwd: make_msp_dir(ks, rt, false, scy).await?,
@@ -237,6 +257,7 @@ async fn make_rt(ks: &str, rt: &RetentionTime, scy: &Session) -> Result<StmtsEve
         lsp_fwd_ts: make_lsp_dir(ks, rt, "ts_lsp", false, scy).await?,
         lsp_bck_ts: make_lsp_dir(ks, rt, "ts_lsp", true, scy).await?,
         prebinned_f32: make_prebinned_f32(ks, rt, scy).await?,
+        bin_write_index_read: make_bin_write_index_read(ks, rt, scy).await?,
     };
     Ok(ret)
 }

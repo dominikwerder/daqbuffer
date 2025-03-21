@@ -129,7 +129,7 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
         match x {
             Ok(()) => {}
             Err(e) => {
-                error!("received error from PgWorker: {e}");
+                error!("received error from PgWorker: {}", e);
             }
         }
     });
@@ -150,7 +150,7 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
             match x {
                 Ok(()) => {}
                 Err(e) => {
-                    error!("received error from ScyllaWorker: {e}");
+                    error!("received error from ScyllaWorker: {}", e);
                 }
             }
         });
@@ -162,6 +162,7 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
     let shared_res = Arc::new(shared_res);
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", ncc.node.listen(), ncc.node.port))?;
+    #[cfg(feature = "http3")]
     let http3 = http3::Http3Support::new_or_dummy(bind_addr.clone()).await?;
     // tokio::net::TcpSocket::new_v4()?.listen(200)?
     let listener = TcpListener::bind(bind_addr).await?;
@@ -171,7 +172,7 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
         } else {
             break;
         };
-        debug!("new connection from {addr}");
+        debug!("new connection from {}", addr);
         let node_config = ncc.clone();
         let service_version = service_version.clone();
         let io = TokioIo::new(stream);
@@ -194,13 +195,26 @@ pub async fn host(ncc: NodeConfigCached, service_version: ServiceVersion) -> Res
             match res {
                 Ok(()) => {}
                 Err(e) => {
-                    error!("error from serve_connection: {e}");
+                    if e.is_body_write_aborted() {
+                        info!("http conn body write abort: {}", e)
+                    } else if e.is_closed() {
+                        info!("http conn close: {}", e)
+                    } else if e.is_canceled() {
+                        info!("http conn cancel: {}", e)
+                    } else if e.is_timeout() {
+                        info!("http conn timeout: {}", e)
+                    } else {
+                        warn!("error from serve_connection: {}", e);
+                    }
                 }
             }
         });
     }
     info!("http service done");
-    let _x: () = http3.wait_idle().await;
+    #[cfg(feature = "http3")]
+    {
+        let _x: () = http3.wait_idle().await;
+    }
     info!("http host done");
     // rawjh.await??;
     Ok(())
@@ -365,6 +379,8 @@ async fn http_service_inner(
         } else {
             Ok(response(StatusCode::METHOD_NOT_ALLOWED).body(body_empty())?)
         }
+    } else if let Some(h) = api4::binwriteindex::BinWriteIndexHandler::handler(&req) {
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = api4::eventdata::EventDataHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config, shared_res)
             .await

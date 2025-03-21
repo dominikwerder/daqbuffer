@@ -1,3 +1,4 @@
+use crate::binwriteindex::BinWriteIndexEntry;
 use crate::conn::create_scy_session_no_ks;
 use crate::events2::events::ReadJobTrace;
 use crate::events2::prepare::StmtsEvents;
@@ -5,11 +6,15 @@ use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
 use daqbuf_err as err;
+use daqbuf_series::msp::MspU32;
+use daqbuf_series::msp::PrebinnedPartitioning;
+use daqbuf_series::SeriesId;
 use futures_util::Future;
 use futures_util::StreamExt;
+use futures_util::TryStreamExt;
 use items_0::timebin::BinningggContainerEventsDyn;
 use items_2::binning::container_bins::ContainerBins;
-use netpod::log::*;
+use netpod::log;
 use netpod::ttl::RetentionTime;
 use netpod::DtMs;
 use netpod::ScyllaConfig;
@@ -19,6 +24,9 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
 use std::sync::Arc;
+
+macro_rules! info { ($($arg:expr),*) => ( if true { log::info!($($arg),*); } ); }
+macro_rules! debug { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
 
 const CONCURRENT_QUERIES_PER_WORKER: usize = 80;
 const SCYLLA_WORKER_QUEUE_LEN: usize = 200;
@@ -36,9 +44,18 @@ autoerr::create_error_v1!(
         Toplist(#[from] crate::accounting::toplist::Error),
         MissingKeyspaceConfig,
         CacheWriteF32(#[from] streams::timebin::cached::reader::Error),
-        Schema(#[from] crate::schema::Error),
+        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+        ScyllaType(#[from] scylla::deserialize::TypeCheckError),
     },
 );
+
+impl<T> From<async_channel::SendError<T>> for Error {
+    fn from(_: async_channel::SendError<T>) -> Self {
+        Self::ChannelSend
+    }
+}
+
+type ScySessTy = scylla::transport::session::GenericSession<scylla::transport::session::CurrentDeserializationApi>;
 
 #[derive(Debug)]
 struct ReadPrebinnedF32 {
@@ -48,6 +65,60 @@ struct ReadPrebinnedF32 {
     msp: u64,
     offs: core::ops::Range<u32>,
     tx: Sender<Result<ContainerBins<f32, f32>, streams::timebin::cached::reader::Error>>,
+}
+
+#[derive(Debug)]
+struct BinWriteIndexRead {
+    rt1: RetentionTime,
+    rt2: RetentionTime,
+    series: SeriesId,
+    pbp: PrebinnedPartitioning,
+    msp: MspU32,
+    lsp_min: u32,
+    lsp_max: u32,
+    tx: Sender<Result<VecDeque<BinWriteIndexEntry>, Error>>,
+}
+
+impl BinWriteIndexRead {
+    async fn execute(self, stmts: &StmtsEvents, scy: &ScySessTy) {
+        // TODO avoid the extra clone
+        let tx = self.tx.clone();
+        match self.execute_inner(stmts, scy).await {
+            Ok(()) => {}
+            Err(e) => {
+                if tx.send(Err(e)).await.is_err() {
+                    // TODO count for stats
+                }
+            }
+        }
+    }
+
+    async fn execute_inner(self, stmts: &StmtsEvents, scy: &ScySessTy) -> Result<(), Error> {
+        let params = (
+            self.series.id() as i64,
+            self.pbp.db_ix() as i16,
+            self.msp.0 as i32,
+            self.rt2.to_index_db_i32() as i16,
+            self.lsp_min as i32,
+            self.lsp_max as i32,
+        );
+        log::info!("execute {:?}", params);
+        let res = scy
+            .execute_iter(stmts.rt(&self.rt1).bin_write_index_read().clone(), params)
+            .await?;
+        let mut it = res.rows_stream::<(i16, i32, i32)>()?;
+        let mut all = VecDeque::new();
+        while let Some((rt, lsp, binlen)) = it.try_next().await? {
+            let v = BinWriteIndexEntry {
+                rt: rt as u16,
+                lsp: lsp as u32,
+                binlen: binlen as u32,
+            };
+            all.push_back(v);
+        }
+        self.tx.send(Ok(all)).await?;
+        Ok(())
+    }
 }
 
 #[derive(Debug)]
@@ -72,6 +143,7 @@ enum Job {
         Sender<Result<(), streams::timebin::cached::reader::Error>>,
     ),
     ReadPrebinnedF32(ReadPrebinnedF32),
+    BinWriteIndexRead(BinWriteIndexRead),
 }
 
 struct ReadNextValues {
@@ -197,6 +269,39 @@ impl ScyllaQueue {
             .map_err(|_| streams::timebin::cached::reader::Error::ChannelRecv)??;
         Ok(res)
     }
+
+    pub async fn bin_write_index_read(
+        &self,
+        rt1: RetentionTime,
+        rt2: RetentionTime,
+        series: SeriesId,
+        pbp: PrebinnedPartitioning,
+        msp: MspU32,
+        lsp_min: u32,
+        lsp_max: u32,
+    ) -> Result<VecDeque<BinWriteIndexEntry>, Error> {
+        let (tx, rx) = async_channel::bounded(1);
+        let job = BinWriteIndexRead {
+            rt1,
+            rt2,
+            series,
+            pbp,
+            msp,
+            lsp_min,
+            lsp_max,
+            tx,
+        };
+        let job = Job::BinWriteIndexRead(job);
+        self.tx
+            .send(job)
+            .await
+            .map_err(|_| streams::timebin::cached::reader::Error::ChannelSend)?;
+        let res = rx
+            .recv()
+            .await
+            .map_err(|_| streams::timebin::cached::reader::Error::ChannelRecv)??;
+        Ok(res)
+    }
 }
 
 #[derive(Debug)]
@@ -229,9 +334,6 @@ impl ScyllaWorker {
             .await
             .map_err(Error::ScyllaConnection)?;
         let scy = Arc::new(scy);
-        crate::schema::schema(RetentionTime::Short, &self.scyconf_st, &scy).await?;
-        crate::schema::schema(RetentionTime::Medium, &self.scyconf_mt, &scy).await?;
-        crate::schema::schema(RetentionTime::Long, &self.scyconf_lt, &scy).await?;
         let kss = [
             self.scyconf_st.keyspace.as_str(),
             self.scyconf_mt.keyspace.as_str(),
@@ -294,6 +396,7 @@ impl ScyllaWorker {
                             // TODO count for stats
                         }
                     }
+                    Job::BinWriteIndexRead(job) => job.execute(&stmts, &scy).await,
                 }
             })
             .buffer_unordered(CONCURRENT_QUERIES_PER_WORKER)

@@ -71,8 +71,6 @@ use url::Url;
 
 #[cfg(feature = "http3")]
 use crate::http3;
-#[cfg(not(feature = "http3"))]
-use crate::http3_dummy as http3;
 
 const DISTRI_PRE: &str = "/distri/";
 
@@ -80,6 +78,7 @@ pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -
     status_board_init();
     use std::str::FromStr;
     let bind_addr = SocketAddr::from_str(&format!("{}:{}", proxy_config.listen, proxy_config.port))?;
+    #[cfg(feature = "http3")]
     let http3 = http3::Http3Support::new_or_dummy(bind_addr.clone()).await?;
     let listener = TcpListener::bind(bind_addr).await?;
     loop {
@@ -110,7 +109,10 @@ pub async fn proxy(proxy_config: ProxyConfig, service_version: ServiceVersion) -
         });
     }
     info!("http service done");
-    let _x: () = http3.wait_idle().await;
+    #[cfg(feature = "http3")]
+    {
+        let _x: () = http3.wait_idle().await;
+    }
     info!("http host done");
     Ok(())
 }

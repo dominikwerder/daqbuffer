@@ -2,13 +2,13 @@
 pub mod aggtest;
 pub mod binnedstream;
 pub mod channelconfig;
+pub mod datagen;
 pub mod dataopen;
 pub mod decode;
 pub mod eventchunker;
 pub mod eventchunkermultifile;
 pub mod eventfilter;
 pub mod frame;
-pub mod gen;
 pub mod index;
 pub mod merge;
 pub mod paths;

@@ -1,15 +1,12 @@
-use super::prepare::StmtsEvents;
+use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
-use daqbuf_err as err;
 use daqbuf_series::SeriesId;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::TryStreamExt;
-use netpod::log::*;
+use netpod::log;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
@@ -19,17 +16,20 @@ use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-macro_rules! trace_emit { ($det:expr, $($arg:tt)*) => ( if $det { trace!($($arg)*); } ) }
+macro_rules! trace_emit { ($det:expr, $($arg:expr),*) => ( if $det { log::trace!($($arg),*); } ) }
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "EventsMsp")]
-pub enum Error {
-    Logic,
-    Worker(Box<crate::worker::Error>),
-    ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-    ScyllaRow(#[from] scylla::transport::iterator::NextRowError),
-    ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
-}
+macro_rules! trace_msp { ($($arg:expr),*) => ( if true { log::trace!($($arg),*); } ) }
+
+autoerr::create_error_v1!(
+    name(Error, "EventsMsp"),
+    enum variants {
+        Logic,
+        Worker(Box<crate::worker::Error>),
+        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
+        ScyllaRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
+    },
+);
 
 impl From<crate::worker::Error> for Error {
     fn from(value: crate::worker::Error) -> Self {
@@ -237,7 +237,7 @@ impl Stream for MspStreamRt {
                             Ready(Err(e)) => {
                                 trace_emit!(trdet, "bulk fwd error {e}");
                                 *rsv = Resolvable::Taken;
-                                error!("{e}");
+                                log::error!("{e}");
                             }
                             Pending => {
                                 trace_emit!(trdet, "bulk fwd Pending");
@@ -305,7 +305,7 @@ pub async fn find_ts_msp(
     stmts: &StmtsEvents,
     scy: &Session,
 ) -> Result<VecDeque<TsMs>, Error> {
-    trace!(
+    trace_msp!(
         "find_ts_msp  series  {:?}  {:?}  {}  bck {}",
         rt,
         series,

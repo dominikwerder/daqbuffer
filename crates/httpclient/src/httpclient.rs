@@ -8,20 +8,20 @@ use bytes::BytesMut;
 use daqbuf_err as err;
 use futures_util::Stream;
 use futures_util::StreamExt;
-use http::header;
 use http::Request;
 use http::Response;
 use http::StatusCode;
+use http::header;
 use http_body::Frame;
-use http_body_util::combinators::BoxBody;
 use http_body_util::BodyExt;
+use http_body_util::combinators::BoxBody;
 use hyper::body::Body;
 use hyper::body::Incoming;
 use hyper::client::conn::http1::SendRequest;
-use netpod::log::*;
-use netpod::ReqCtx;
 use netpod::APP_JSON;
+use netpod::ReqCtx;
 use netpod::X_DAQBUF_REQID;
+use netpod::log::*;
 use serde::Serialize;
 use std::fmt;
 use std::pin::Pin;
@@ -121,6 +121,10 @@ pub fn internal_error() -> http::Response<StreamBody> {
     let mut res = http::Response::new(body_empty());
     *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
     res
+}
+
+pub fn bad_request_response(msg: String, reqid: impl AsRef<str>) -> http::Response<StreamBody> {
+    error_status_response(StatusCode::BAD_REQUEST, msg, reqid)
 }
 
 pub fn error_response(msg: String, reqid: impl AsRef<str>) -> http::Response<StreamBody> {
@@ -361,11 +365,7 @@ where
     let host = uri.host().ok_or_else(|| Error::NoHostInUrl)?;
     let port = uri.port_u16().unwrap_or_else(|| {
         // NOTE known issue: url::Url will "forget" the port if it was the default port.
-        if scheme == "https" {
-            443
-        } else {
-            80
-        }
+        if scheme == "https" { 443 } else { 80 }
     });
     let stream = TcpStream::connect(format!("{host}:{port}")).await?;
     if false {

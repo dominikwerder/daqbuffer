@@ -1,9 +1,6 @@
+use crate::ErrConv;
 use crate::create_connection;
 use crate::worker::PgQueue;
-use crate::ErrConv;
-use daqbuf_err as err;
-use err::Error;
-use netpod::log::*;
 use netpod::ChannelArchiver;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
@@ -12,8 +9,24 @@ use netpod::Database;
 use netpod::NodeConfigCached;
 use netpod::ScalarType;
 use netpod::Shape;
+use netpod::log;
 use serde_json::Value as JsVal;
 use tokio_postgres::Client as PgClient;
+
+macro_rules! debug { ($($arg:expr),*) => ( if true { log::debug!($($arg),*) } ); }
+
+macro_rules! trace { ($($arg:expr),*) => ( if true { log::trace!($($arg),*) } ); }
+
+autoerr::create_error_v1!(
+    name(Error, "DbconnSearch"),
+    enum variants {
+        BadShapeFromDb(String),
+        BadArchEngValue(String),
+        Pg(#[from] tokio_postgres::Error),
+        Other(#[from] daqbuf_err::Error),
+        Worker(#[from] crate::worker::Error),
+    },
+);
 
 pub async fn search_channel_databuffer(
     query: ChannelSearchQuery,
@@ -52,8 +65,7 @@ pub async fn search_channel_databuffer(
                 &backend,
             ],
         )
-        .await
-        .err_conv()?;
+        .await?;
     let mut res = Vec::new();
     for row in rows {
         let shapedb: Option<serde_json::Value> = row.get(4);
@@ -68,14 +80,14 @@ pub async fn search_channel_databuffer(
                                 Some(n) => {
                                     a.push(n as u32);
                                 }
-                                None => return Err(Error::with_msg(format!("can not understand shape {:?}", shapedb))),
+                                None => return Err(Error::BadShapeFromDb(format!("{:?}", shapedb))),
                             },
-                            _ => return Err(Error::with_msg(format!("can not understand shape {:?}", shapedb))),
+                            _ => return Err(Error::BadShapeFromDb(format!("{:?}", shapedb))),
                         }
                     }
                     a
                 }
-                _ => return Err(Error::with_msg(format!("can not understand shape {:?}", shapedb))),
+                _ => return Err(Error::BadShapeFromDb(format!("{:?}", shapedb))),
             },
             None => Vec::new(),
         };
@@ -131,7 +143,7 @@ pub(super) async fn search_channel_scylla(
         regop
     );
     let params: &[&(dyn tokio_postgres::types::ToSql + Sync)] = &[&ch_kind, &query.name_regex, &cb1, &cb2];
-    info!("search_channel_scylla  {:?}", params);
+    trace!("search_channel_scylla  {:?}", params);
     let rows = pgc.query(sql, params).await.err_conv()?;
     let mut res = Vec::new();
     for row in rows {
@@ -227,10 +239,7 @@ async fn search_channel_archeng(
                     if k == "Scalar" {
                         Vec::new()
                     } else {
-                        return Err(Error::with_msg_no_trace(format!(
-                            "search_channel_archeng can not understand {:?}",
-                            config
-                        )));
+                        return Err(Error::BadArchEngValue(format!("{:?}", config)));
                     }
                 }
                 JsVal::Object(k) => match k.get("Wave") {
@@ -239,24 +248,15 @@ async fn search_channel_archeng(
                             vec![k.as_i64().unwrap_or(u32::MAX as i64) as u32]
                         }
                         _ => {
-                            return Err(Error::with_msg_no_trace(format!(
-                                "search_channel_archeng can not understand {:?}",
-                                config
-                            )));
+                            return Err(Error::BadArchEngValue(format!("{:?}", config)));
                         }
                     },
                     None => {
-                        return Err(Error::with_msg_no_trace(format!(
-                            "search_channel_archeng can not understand {:?}",
-                            config
-                        )));
+                        return Err(Error::BadArchEngValue(format!("{:?}", config)));
                     }
                 },
                 _ => {
-                    return Err(Error::with_msg_no_trace(format!(
-                        "search_channel_archeng can not understand {:?}",
-                        config
-                    )));
+                    return Err(Error::BadArchEngValue(format!("{:?}", config)));
                 }
             },
             None => Vec::new(),
@@ -290,16 +290,12 @@ pub async fn search_channel(
     let mut query = query;
     query.backend = Some(backend.into());
     if let Some(_scyconf) = ncc.node_config.cluster.scylla_st() {
-        pgqueue
-            .search_channel_scylla(query)
-            .await
-            .map_err(|e| Error::with_msg_no_trace(format!("db worker error {e}")))?
+        pgqueue.search_channel_scylla(query).await?
         // search_channel_scylla(query, backend, pgconf).await
     } else if let Some(conf) = ncc.node.channel_archiver.as_ref() {
         search_channel_archeng(query, backend.clone(), conf, pgconf).await
     } else if let Some(_conf) = ncc.node.archiver_appliance.as_ref() {
-        // TODO
-        err::todoval()
+        todo!()
     } else {
         search_channel_databuffer(query, backend, ncc).await
     }

@@ -67,6 +67,7 @@ async fn channel_search(req: Requ, pgqueue: &PgQueue, ncc: &NodeConfigCached) ->
     };
     let res = dbconn::search::search_channel(query, pgqueue, ncc)
         .instrument(logspan)
-        .await?;
+        .await
+        .map_err(|e| Error::from_to_string(e))?;
     Ok(res)
 }

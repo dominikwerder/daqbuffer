@@ -6,14 +6,14 @@ use daqbuf_err::Error;
 use daqbuffer::cli::ClientType;
 use daqbuffer::cli::Opts;
 use daqbuffer::cli::SubCmd;
-use netpod::log::*;
-use netpod::query::CacheUsage;
 use netpod::NodeConfig;
 use netpod::NodeConfigCached;
 use netpod::ProxyConfig;
 use netpod::ScalarType;
 use netpod::ServiceVersion;
 use netpod::Shape;
+use netpod::log::*;
+use netpod::query::CacheUsage;
 use taskrun::tokio;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
@@ -140,7 +140,7 @@ async fn go() -> Result<(), Error> {
             }
         },
         SubCmd::GenerateTestData => {
-            disk::gen::gen_test_data().await?;
+            disk::datagen::gen_test_data().await?;
         }
         SubCmd::Test => (),
         SubCmd::Version => {
@@ -172,11 +172,11 @@ async fn test_log() {
 #[cfg(feature = "DISABLED")]
 fn simple_fetch() {
     use daqbuffer::err::ErrConv;
-    use netpod::timeunits::*;
     use netpod::ByteOrder;
     use netpod::ScalarType;
     use netpod::SfDbChannel;
     use netpod::Shape;
+    use netpod::timeunits::*;
     taskrun::run(async {
         let _rh = daqbufp2::nodes::require_test_hosts_running()?;
         let t1 = chrono::Utc::now();

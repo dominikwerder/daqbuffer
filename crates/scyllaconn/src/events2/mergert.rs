@@ -3,9 +3,6 @@ use super::events::EventsStreamRt;
 use crate::events2::onebeforeandbulk::OneBeforeAndBulk;
 use crate::range::ScyllaSeriesRange;
 use crate::worker::ScyllaQueue;
-use daqbuf_err as err;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use items_0::streamitem::sitem_err2_from_string;
@@ -14,20 +11,21 @@ use items_0::streamitem::SitemErrTy;
 use items_0::streamitem::StreamItem;
 use items_2::channelevents::ChannelEvents;
 use items_2::merger::Merger;
-use netpod::log::*;
+use netpod::log;
 use netpod::ttl::RetentionTime;
 use netpod::ChConf;
 use std::pin::Pin;
 use std::task::Context;
 use std::task::Poll;
 
-macro_rules! trace_init { ($($arg:tt)*) => ( if true { trace!($($arg)*); } ) }
+macro_rules! trace_init { ($($arg:expr),*) => ( if true { log::trace!($($arg),*); } ) }
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "EventsMergeRt")]
-pub enum Error {
-    Msg(String),
-}
+autoerr::create_error_v1!(
+    name(Error, "EventsMergeRt"),
+    enum variants {
+        Msg(String),
+    },
+);
 
 pub struct MergeRts {
     inp: Pin<Box<dyn Stream<Item = Result<ChannelEvents, SitemErrTy>> + Send>>,

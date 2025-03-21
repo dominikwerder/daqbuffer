@@ -15,7 +15,7 @@ autoerr::create_error_v1!(
 pub struct Http3Support {}
 
 impl Http3Support {
-    pub async fn new(bind_addr: SocketAddr) -> Result<Self, Error> {
+    pub async fn new(_bind_addr: SocketAddr) -> Result<Self, Error> {
         let ret = Self {};
         Ok(ret)
     }
@@ -28,7 +28,7 @@ impl Http3Support {
 impl Future for Http3Support {
     type Output = Result<(), Error>;
 
-    fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
+    fn poll(self: Pin<&mut Self>, _cx: &mut Context) -> Poll<Self::Output> {
         todo!()
     }
 }

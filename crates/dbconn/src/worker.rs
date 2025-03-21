@@ -3,29 +3,28 @@ use async_channel::Receiver;
 use async_channel::RecvError;
 use async_channel::Sender;
 use daqbuf_err as err;
-use err::thiserror;
-use err::ThisError;
-use netpod::log::*;
-use netpod::range::evrange::NanoRange;
 use netpod::ChConf;
 use netpod::ChannelSearchQuery;
 use netpod::ChannelSearchResult;
 use netpod::Database;
 use netpod::SeriesKind;
 use netpod::SfDbChannel;
+use netpod::log::*;
+use netpod::range::evrange::NanoRange;
 use taskrun::tokio;
 use tokio::task::JoinHandle;
 use tokio_postgres::Client;
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "PgWorker")]
-pub enum Error {
-    Error(#[from] err::Error),
-    ChannelSend,
-    ChannelRecv,
-    Join,
-    ChannelConfig(#[from] crate::channelconfig::Error),
-}
+autoerr::create_error_v1!(
+    name(Error, "PgWorker"),
+    enum variants {
+        Error(#[from] err::Error),
+        ChannelSend,
+        ChannelRecv,
+        Join,
+        ChannelConfig(#[from] crate::channelconfig::Error),
+    },
+);
 
 impl From<RecvError> for Error {
     fn from(_value: RecvError) -> Self {
@@ -51,7 +50,10 @@ enum Job {
         Vec<u64>,
         Sender<Result<Vec<Option<crate::channelinfo::ChannelInfo>>, crate::channelinfo::Error>>,
     ),
-    SearchChannel(ChannelSearchQuery, Sender<Result<ChannelSearchResult, err::Error>>),
+    SearchChannel(
+        ChannelSearchQuery,
+        Sender<Result<ChannelSearchResult, crate::search::Error>>,
+    ),
     SfChannelBySeries(
         netpod::SfDbChannel,
         Sender<Result<netpod::SfDbChannel, crate::FindChannelError>>,
@@ -101,7 +103,7 @@ impl PgQueue {
     pub async fn search_channel_scylla(
         &self,
         query: ChannelSearchQuery,
-    ) -> Result<Result<ChannelSearchResult, err::Error>, Error> {
+    ) -> Result<Result<ChannelSearchResult, crate::search::Error>, Error> {
         let (tx, rx) = async_channel::bounded(1);
         let job = Job::SearchChannel(query, tx);
         self.tx.send(job).await.map_err(|_| Error::ChannelSend)?;

@@ -43,6 +43,7 @@ dbconn = { path = "../dbconn" }
 disk = { path = "../disk" }
 items_0 = { path = "../../../daqbuf-items-0", package = "daqbuf-items-0" }
 items_2 = { path = "../../../daqbuf-items-2", package = "daqbuf-items-2" }
+series = { path = "../../../daqbuf-series", package = "daqbuf-series" }
 parse = { path = "../../../daqbuf-parse", package = "daqbuf-parse" }
 streams = { path = "../../../daqbuf-streams", package = "daqbuf-streams" }
 streamio = { path = "../streamio" }
@@ -54,7 +55,7 @@ daqbuf-redis = { path = "../daqbuf-redis" }
 httpclient = { path = "../httpclient" }
 
 [features]
-#default = []
-default = ["http3"]
+default = []
+# default = ["http3"]
 prometheus_endpoint = []
 http3 = ["h3", "h3-quinn", "quinn", "rustls", "rustls-pki-types"]

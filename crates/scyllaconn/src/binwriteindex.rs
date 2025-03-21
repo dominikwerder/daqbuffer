@@ -1,0 +1,174 @@
+pub mod bwxcmb;
+
+use crate::worker::ScyllaQueue;
+use daqbuf_series::msp::MspU32;
+use daqbuf_series::msp::PrebinnedPartitioning;
+use daqbuf_series::SeriesId;
+use futures_util::Future;
+use futures_util::FutureExt;
+use futures_util::Stream;
+use netpod::log;
+use netpod::range::evrange::NanoRange;
+use netpod::ttl::RetentionTime;
+use std::collections::VecDeque;
+use std::fmt;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
+
+macro_rules! info { ($($arg:expr),*) => ( if true { log::info!($($arg),*); } ); }
+macro_rules! debug { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
+
+autoerr::create_error_v1!(
+    name(Error, "BinWriteIndexRtStream"),
+    enum variants {
+        Worker(#[from] crate::worker::Error),
+    },
+);
+
+struct Fut1(Fut2);
+
+impl fmt::Debug for Fut1 {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_tuple("Fut1").finish()
+    }
+}
+
+type Fut2 =
+    Pin<Box<dyn Future<Output = Result<(u32, u32, u32, VecDeque<BinWriteIndexEntry>), crate::worker::Error>> + Send>>;
+
+#[derive(Debug)]
+pub struct BinWriteIndexEntry {
+    pub rt: u16,
+    pub lsp: u32,
+    pub binlen: u32,
+}
+
+#[derive(Debug)]
+pub struct BinWriteIndexSet {
+    pub rt: RetentionTime,
+    pub msp: MspU32,
+    pub entries: VecDeque<BinWriteIndexEntry>,
+}
+
+#[derive(Debug)]
+pub struct BinWriteIndexRtStream {
+    rt1: RetentionTime,
+    rt2: RetentionTime,
+    series: SeriesId,
+    scyqueue: ScyllaQueue,
+    pbp: PrebinnedPartitioning,
+    msp: u32,
+    lsp_min: u32,
+    msp_end: u32,
+    lsp_end: u32,
+    fut1: Option<Fut1>,
+}
+
+impl BinWriteIndexRtStream {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    pub fn new(
+        rt1: RetentionTime,
+        rt2: RetentionTime,
+        series: SeriesId,
+        pbp: PrebinnedPartitioning,
+        range: NanoRange,
+        scyqueue: ScyllaQueue,
+    ) -> Self {
+        info!("{}::new  INFO/DEBUG test", Self::type_name());
+        debug!("{}::new", Self::type_name());
+        let (msp_beg, lsp_beg) = pbp.msp_lsp(range.beg_ts().to_ts_ms());
+        let (msp_end, lsp_end) = pbp.msp_lsp(range.end_ts().add_dt_nano(pbp.bin_len().dt_ns()).to_ts_ms());
+        BinWriteIndexRtStream {
+            rt1,
+            rt2,
+            series,
+            scyqueue,
+            pbp,
+            msp: msp_beg,
+            lsp_min: lsp_beg,
+            msp_end,
+            lsp_end,
+            fut1: None,
+        }
+    }
+
+    async fn next_query_fut(
+        scyqueue: &ScyllaQueue,
+        rt1: RetentionTime,
+        rt2: RetentionTime,
+        series: SeriesId,
+        pbp: PrebinnedPartitioning,
+        msp: u32,
+        lsp_min: u32,
+        lsp_max: u32,
+    ) -> Result<(u32, u32, u32, VecDeque<BinWriteIndexEntry>), crate::worker::Error> {
+        debug!("make_next_query_fut  msp {}  lsp {} {}", msp, lsp_min, lsp_max);
+        let res = scyqueue
+            .bin_write_index_read(rt1, rt2, series, pbp, MspU32(msp), lsp_min, lsp_max)
+            .await?;
+        Ok((msp, lsp_min, lsp_max, res))
+    }
+
+    fn make_next_query_fut(mut self: Pin<&mut Self>, _cx: &mut Context) -> Option<Fut1> {
+        if self.msp <= self.msp_end {
+            let msp = self.msp;
+            let lsp_min = self.lsp_min;
+            self.msp += 1;
+            self.lsp_min = 0;
+            let lsp_max = if self.msp == self.msp_end {
+                self.lsp_end
+            } else {
+                self.pbp.patch_len()
+            };
+            let scyqueue = unsafe { netpod::extltref(&self.scyqueue) };
+            let fut = Self::next_query_fut(
+                scyqueue,
+                self.rt1.clone(),
+                self.rt2.clone(),
+                self.series.clone(),
+                self.pbp.clone(),
+                msp,
+                lsp_min,
+                lsp_max,
+            );
+            Some(Fut1(Box::pin(fut)))
+        } else {
+            debug!("make_next_query_fut  done");
+            None
+        }
+    }
+}
+
+impl Stream for BinWriteIndexRtStream {
+    type Item = Result<BinWriteIndexSet, Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        use Poll::*;
+        loop {
+            break if let Some(fut) = self.fut1.as_mut() {
+                match fut.0.poll_unpin(cx) {
+                    Ready(Ok(x)) => {
+                        self.fut1 = None;
+                        let item = BinWriteIndexSet {
+                            rt: self.rt1.clone(),
+                            msp: MspU32(x.0),
+                            entries: x.3,
+                        };
+                        Ready(Some(Ok(item)))
+                    }
+                    Ready(Err(e)) => Ready(Some(Err(e.into()))),
+                    Pending => Pending,
+                }
+            } else if let Some(fut) = self.as_mut().make_next_query_fut(cx) {
+                self.fut1 = Some(fut);
+                continue;
+            } else {
+                Ready(None)
+            };
+        }
+    }
+}

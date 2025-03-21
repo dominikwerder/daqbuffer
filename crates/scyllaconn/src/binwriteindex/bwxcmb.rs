@@ -1,0 +1,126 @@
+use super::BinWriteIndexRtStream;
+use crate::worker::ScyllaQueue;
+use daqbuf_series::msp::PrebinnedPartitioning;
+use daqbuf_series::SeriesId;
+use futures_util::Future;
+use futures_util::Stream;
+use futures_util::StreamExt;
+use netpod::log;
+use netpod::range::evrange::NanoRange;
+use netpod::ttl::RetentionTime;
+use std::collections::VecDeque;
+use std::fmt;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
+
+macro_rules! debug { ($($arg:expr),*) => ( if true { log::debug!($($arg),*); } ); }
+
+autoerr::create_error_v1!(
+    name(Error, "BinWriteIndexStream"),
+    enum variants {
+        A,
+    },
+);
+
+type Fut1Res = <BinWriteIndexRtStream as Stream>::Item;
+
+struct Fut1a(Pin<Box<dyn Future<Output = Fut1Res>>>);
+
+impl fmt::Debug for Fut1a {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> fmt::Result {
+        fmt.debug_tuple("Fut1a").finish()
+    }
+}
+
+#[derive(Debug)]
+enum InpSt {
+    Polling(BinWriteIndexRtStream),
+    Ready(BinWriteIndexRtStream, Fut1Res),
+    Done,
+}
+
+#[derive(Debug)]
+pub struct BinWriteIndexStream {
+    rtss: VecDeque<InpSt>,
+}
+
+impl BinWriteIndexStream {
+    pub fn type_name() -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
+    pub fn new(series: SeriesId, range: NanoRange, scyqueue: ScyllaQueue) -> Self {
+        debug!("{}::new", Self::type_name());
+        let mut rtss = VecDeque::new();
+        let rts = [RetentionTime::Short, RetentionTime::Medium, RetentionTime::Long];
+        for rt in rts {
+            let s = BinWriteIndexRtStream::new(
+                rt.clone(),
+                rt.clone(),
+                series.clone(),
+                PrebinnedPartitioning::Day1,
+                range.clone(),
+                scyqueue.clone(),
+            );
+            rtss.push_back(InpSt::Polling(s));
+        }
+        BinWriteIndexStream { rtss }
+    }
+
+    fn abort(&mut self) {
+        for inp in self.rtss.iter_mut() {
+            *inp = InpSt::Done;
+        }
+    }
+}
+
+impl Stream for BinWriteIndexStream {
+    type Item = Result<(), Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
+        // TODO poll the streams in `self.rtss`. When any of them returns an item, store it
+        // in the variant InpSt::Ready(..) together with the remaining stream.
+        // When all input streams have an item ready, store all items in a new variable
+        // in the type Self and transition all inputs to Polling again.
+        // If any of the input streams returns None, we return None as well.
+        use Poll::*;
+        loop {
+            let mut ready_cnt: u16 = 0;
+            let mut do_abort = false;
+            let mut have_pending = false;
+            for inp in self.rtss.iter_mut() {
+                match inp {
+                    InpSt::Polling(fut) => match fut.poll_next_unpin(cx) {
+                        Ready(Some(item)) => {
+                            let fut = todo!("bwxcmb keep stream in state");
+                            *inp = InpSt::Ready(fut, item);
+                            ready_cnt += 1;
+                        }
+                        Ready(None) => {
+                            do_abort = true;
+                        }
+                        Pending => {
+                            have_pending = true;
+                        }
+                    },
+                    InpSt::Ready(..) => {
+                        ready_cnt += 1;
+                    }
+                    InpSt::Done => {}
+                }
+            }
+            if do_abort {
+                self.abort();
+            }
+            break if ready_cnt == self.rtss.len() as u16 {
+                todo!("TODO bwxcmb")
+            } else if have_pending {
+                Pending
+            } else {
+                self.abort();
+                Ready(None)
+            };
+        }
+    }
+}
