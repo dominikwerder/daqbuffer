@@ -98,6 +98,7 @@ impl StatsChannel {
         let (tx, rx) = async_channel::bounded(2);
         taskrun::spawn(async move {
             let mut rx = rx;
+            let mut rx = std::pin::pin!(rx);
             while let Some(_) = rx.next().await {}
         });
         Self::new(tx)

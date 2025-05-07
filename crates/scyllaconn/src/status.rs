@@ -15,7 +15,7 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits::MS;
 use netpod::CONNECTION_STATUS_DIV;
-use scylla::Session as ScySession;
+use scylla::client::session::Session as ScySession;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;

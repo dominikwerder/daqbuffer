@@ -1,13 +1,13 @@
 use netpod::ttl::RetentionTime;
-use scylla::prepared_statement::PreparedStatement;
-use scylla::Session;
+use scylla::client::session::Session;
+use scylla::statement::prepared::PreparedStatement;
 
 autoerr::create_error_v1!(
     name(Error, "ScyllaPrepare"),
     enum variants {
-        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-        ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaNextRow(#[from] scylla::errors::NextRowError),
         ScyllaWorker(Box<crate::worker::Error>),
+        ScyllaPrepare(#[from] scylla::errors::PrepareError),
         MissingQuery(String),
         RangeEndOverflow,
         InvalidFuture,

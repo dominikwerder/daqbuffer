@@ -1,7 +1,5 @@
 use daqbuf_err as err;
 use err::Error;
-use scylla::transport::errors::NewSessionError as ScyNewSessionError;
-use scylla::transport::errors::QueryError as ScyQueryError;
 
 pub trait ErrConv<T> {
     fn err_conv(self) -> Result<T, Error>;
@@ -15,29 +13,39 @@ impl<T, A> ErrConv<T> for Result<T, async_channel::SendError<A>> {
         }
     }
 }
-impl<T> ErrConv<T> for Result<T, ScyQueryError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, ScyNewSessionError> {
-    fn err_conv(self) -> Result<T, Error> {
-        match self {
-            Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
-        }
-    }
-}
 
 impl<T> ErrConv<T> for Result<T, scylla::deserialize::TypeCheckError> {
     fn err_conv(self) -> Result<T, Error> {
         match self {
             Ok(k) => Ok(k),
-            Err(e) => Err(Error::with_msg_no_trace(format!("{e:?}"))),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{:?}", e))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::errors::PagerExecutionError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{:?}", e))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::errors::NextRowError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{:?}", e))),
+        }
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::errors::NewSessionError> {
+    fn err_conv(self) -> Result<T, Error> {
+        match self {
+            Ok(k) => Ok(k),
+            Err(e) => Err(Error::with_msg_no_trace(format!("{:?}", e))),
         }
     }
 }

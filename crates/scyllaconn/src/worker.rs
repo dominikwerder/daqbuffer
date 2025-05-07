@@ -19,7 +19,7 @@ use netpod::ttl::RetentionTime;
 use netpod::DtMs;
 use netpod::ScyllaConfig;
 use netpod::TsMs;
-use scylla::Session;
+use scylla::client::session::Session;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
@@ -44,8 +44,9 @@ autoerr::create_error_v1!(
         Toplist(#[from] crate::accounting::toplist::Error),
         MissingKeyspaceConfig,
         CacheWriteF32(#[from] streams::timebin::cached::reader::Error),
-        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
         ScyllaType(#[from] scylla::deserialize::TypeCheckError),
+        ScyllaNextRow(#[from] scylla::errors::NextRowError),
+        ScyllaPagerExecution(#[from] scylla::errors::PagerExecutionError),
     },
 );
 
@@ -55,7 +56,7 @@ impl<T> From<async_channel::SendError<T>> for Error {
     }
 }
 
-type ScySessTy = scylla::transport::session::GenericSession<scylla::transport::session::CurrentDeserializationApi>;
+type ScySessTy = scylla::client::session::Session;
 
 #[derive(Debug)]
 struct ReadPrebinnedF32 {

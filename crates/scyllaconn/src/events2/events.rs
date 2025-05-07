@@ -29,7 +29,7 @@ use netpod::Shape;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
 use netpod::TsNano;
-use scylla::Session;
+use scylla::client::session::Session;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
@@ -96,10 +96,10 @@ autoerr::create_error_v1!(
         RangeEndOverflow,
         NotTokenAware,
         Prepare(#[from] crate::events2::prepare::Error),
-        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-        ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaNextRow(#[from] scylla::errors::NextRowError),
         ScyllaWorker(Box<crate::worker::Error>),
         ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
+        ScyllaPagerExecution(#[from] scylla::errors::PagerExecutionError),
     },
 );
 
@@ -1070,8 +1070,8 @@ where
 
 trait ValTy: Sized + 'static {
     type ScaTy: ScalarOps + std::default::Default;
-    type ScyTy: for<'a, 'b> scylla::deserialize::DeserializeValue<'a, 'b>;
-    type ScyRowTy: for<'a, 'b> scylla::deserialize::DeserializeRow<'a, 'b>;
+    type ScyTy: for<'a, 'b> scylla::deserialize::value::DeserializeValue<'a, 'b>;
+    type ScyRowTy: for<'a, 'b> scylla::deserialize::row::DeserializeRow<'a, 'b>;
     type Container: BinningggContainerEventsDyn + Empty + Appendable<Self>;
     fn from_valueblob(inp: Vec<u8>) -> Self;
     fn table_name() -> &'static str;

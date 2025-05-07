@@ -9,9 +9,10 @@ use items_2::binning::container_bins::ContainerBins;
 use netpod::ttl::RetentionTime;
 use netpod::DtMs;
 use netpod::TsNano;
-use scylla::Session as ScySession;
 use std::ops::Range;
 use streams::timebin::cached::reader::BinsReadRes;
+
+type ScySession = scylla::client::session::Session;
 
 async fn scylla_read_prebinned_f32(
     series: u64,

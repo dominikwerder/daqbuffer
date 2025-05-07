@@ -3,14 +3,15 @@ use futures_util::TryStreamExt;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
 use netpod::EMIT_ACCOUNTING_SNAP;
-use scylla::prepared_statement::PreparedStatement;
-use scylla::Session as ScySession;
+use scylla::client::session::Session as ScySession;
+use scylla::statement::prepared::PreparedStatement;
 
 autoerr::create_error_v1!(
     name(Error, "AccountingToplist"),
     enum variants {
-        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-        ScyllaNextRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaPrepare(#[from] scylla::errors::PrepareError),
+        ScyllaPagerExecution(#[from] scylla::errors::PagerExecutionError),
+        ScyllaNextRow(#[from] scylla::errors::NextRowError),
         ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
         UsageDataMalformed,
     },

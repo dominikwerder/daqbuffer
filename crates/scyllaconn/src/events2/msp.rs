@@ -10,7 +10,7 @@ use netpod::log;
 use netpod::ttl::RetentionTime;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
-use scylla::Session;
+use scylla::client::session::Session;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::task::Context;
@@ -25,9 +25,9 @@ autoerr::create_error_v1!(
     enum variants {
         Logic,
         Worker(Box<crate::worker::Error>),
-        ScyllaQuery(#[from] scylla::transport::errors::QueryError),
-        ScyllaRow(#[from] scylla::transport::iterator::NextRowError),
+        ScyllaRow(#[from] scylla::errors::NextRowError),
         ScyllaTypeCheck(#[from] scylla::deserialize::TypeCheckError),
+        ScyllaPagerExecution(#[from] scylla::errors::PagerExecutionError),
     },
 );
 
@@ -111,7 +111,7 @@ impl MspStreamRt {
             let range = range.clone();
             async move { scyqueue.find_ts_msp(rt, series.id(), range, false).await }
         };
-        let do_trace_detail = netpod::TRACE_SERIES_ID.contains(&series.id());
+        let do_trace_detail = daqbuf_series::dbg::dbg_series(series.clone());
         trace_emit!(do_trace_detail, "-------------------------------------  TEST TRACE");
         Self {
             rt,

@@ -894,19 +894,25 @@ pub trait ErrConv<T> {
     fn err_conv(self) -> Result<T, daqbuf_err::Error>;
 }
 
-impl<T> ErrConv<T> for Result<T, scylla::transport::errors::NewSessionError> {
-    fn err_conv(self) -> Result<T, daqbuf_err::Error> {
-        self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
-    }
-}
-
-impl<T> ErrConv<T> for Result<T, scylla::transport::errors::QueryError> {
+impl<T> ErrConv<T> for Result<T, scylla::errors::NewSessionError> {
     fn err_conv(self) -> Result<T, daqbuf_err::Error> {
         self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
     }
 }
 
 impl<T> ErrConv<T> for Result<T, scylla::deserialize::TypeCheckError> {
+    fn err_conv(self) -> Result<T, daqbuf_err::Error> {
+        self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::errors::PagerExecutionError> {
+    fn err_conv(self) -> Result<T, daqbuf_err::Error> {
+        self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
+    }
+}
+
+impl<T> ErrConv<T> for Result<T, scylla::errors::NextRowError> {
     fn err_conv(self) -> Result<T, daqbuf_err::Error> {
         self.map_err(|e| daqbuf_err::Error::with_msg_no_trace(format!("{e:?}")))
     }

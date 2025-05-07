@@ -13,13 +13,14 @@ use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits;
 use netpod::EMIT_ACCOUNTING_SNAP;
-use scylla::prepared_statement::PreparedStatement;
-use scylla::Session as ScySession;
+use scylla::statement::prepared::PreparedStatement;
 use std::collections::VecDeque;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
+
+type ScySession = scylla::client::session::Session;
 
 async fn read_next(
     ts_msp: u64,

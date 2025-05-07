@@ -7,6 +7,6 @@ edition = "2021"
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-daqbuf-err = { path = "../../../daqbuf-err" }
+autoerr = "0.0.3"
 taskrun = { path = "../taskrun" }
-redis = { version = "0.28.2", features = [] }
+redis = { version = "0.30.0", features = [] }

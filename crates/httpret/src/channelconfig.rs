@@ -68,7 +68,9 @@ autoerr::create_error_v1!(
         Async(#[from] netpod::AsyncChannelError),
         ChannelConfig(#[from] dbconn::channelconfig::Error),
         Netpod(#[from] netpod::Error),
-        ScyllaQuery(#[from] scyllaconn::scylla::transport::errors::QueryError),
+        ScyllaExecution(#[from] scyllaconn::scylla::errors::ExecutionError),
+        ScyllaPagerExecution(#[from] scyllaconn::scylla::errors::PagerExecutionError),
+        ScyllanextRow(#[from] scyllaconn::scylla::errors::NextRowError),
         ScyllaTypeCheck(#[from] scyllaconn::scylla::deserialize::TypeCheckError),
     },
 );
