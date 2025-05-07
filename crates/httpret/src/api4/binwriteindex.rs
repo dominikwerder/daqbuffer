@@ -193,7 +193,7 @@ async fn binned_instrumented(
     if accepts_json_or_all(&head.headers) {
         Ok(binned_json_single(res2, ctx, ncc).await?)
     } else {
-        let ret = error_response(format!("Unsupported Accept: {:?}", &head.headers), ctx.reqid());
+        let ret = error_response(format!("unsupported accept: {:?}", &head.headers), ctx.reqid());
         Ok(ret)
     }
 }
@@ -243,8 +243,7 @@ async fn binned_json_single(
 ) -> Result<StreamResponse, Error> {
     // TODO unify with binned_json_framed
     debug!("binned_json_single");
-    let rt1 = res2.query.retention_time_1();
-    let rt2 = res2.query.retention_time_2();
+    let rt1 = res2.query.retention_time();
     let pbp = res2.query.prebinned_partitioning();
     // let rts = [RetentionTime::Short, RetentionTime::Medium, RetentionTime::Long];
     // for rt in rts {
@@ -252,7 +251,6 @@ async fn binned_json_single(
     {
         let mut stream = scyllaconn::binwriteindex::BinWriteIndexRtStream::new(
             rt1,
-            rt2,
             SeriesId::new(res2.ch_conf.series().unwrap()),
             pbp.clone(),
             res2.query.range().to_time().unwrap(),

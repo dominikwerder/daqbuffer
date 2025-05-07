@@ -236,9 +236,9 @@ async fn make_prebinned_f32(ks: &str, rt: &RetentionTime, scy: &Session) -> Resu
 async fn make_bin_write_index_read(ks: &str, rt: &RetentionTime, scy: &Session) -> Result<PreparedStatement, Error> {
     let cql = format!(
         concat!(
-            "select rt, lsp, binlen",
-            " from {}.{}bin_write_index_v03",
-            " where series = ? and pbp = ? and msp = ? and rt = ?",
+            "select lsp, binlen",
+            " from {}.{}bin_write_index_v04",
+            " where series = ? and pbp = ? and msp = ?",
             " and lsp >= ? and lsp < ?",
         ),
         ks,

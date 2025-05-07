@@ -71,7 +71,6 @@ struct ReadPrebinnedF32 {
 #[derive(Debug)]
 struct BinWriteIndexRead {
     rt1: RetentionTime,
-    rt2: RetentionTime,
     series: SeriesId,
     pbp: PrebinnedPartitioning,
     msp: MspU32,
@@ -99,7 +98,6 @@ impl BinWriteIndexRead {
             self.series.id() as i64,
             self.pbp.db_ix() as i16,
             self.msp.0 as i32,
-            self.rt2.to_index_db_i32() as i16,
             self.lsp_min as i32,
             self.lsp_max as i32,
         );
@@ -107,11 +105,10 @@ impl BinWriteIndexRead {
         let res = scy
             .execute_iter(stmts.rt(&self.rt1).bin_write_index_read().clone(), params)
             .await?;
-        let mut it = res.rows_stream::<(i16, i32, i32)>()?;
+        let mut it = res.rows_stream::<(i32, i32)>()?;
         let mut all = VecDeque::new();
-        while let Some((rt, lsp, binlen)) = it.try_next().await? {
+        while let Some((lsp, binlen)) = it.try_next().await? {
             let v = BinWriteIndexEntry {
-                rt: rt as u16,
                 lsp: lsp as u32,
                 binlen: binlen as u32,
             };
@@ -274,7 +271,6 @@ impl ScyllaQueue {
     pub async fn bin_write_index_read(
         &self,
         rt1: RetentionTime,
-        rt2: RetentionTime,
         series: SeriesId,
         pbp: PrebinnedPartitioning,
         msp: MspU32,
@@ -284,7 +280,6 @@ impl ScyllaQueue {
         let (tx, rx) = async_channel::bounded(1);
         let job = BinWriteIndexRead {
             rt1,
-            rt2,
             series,
             pbp,
             msp,

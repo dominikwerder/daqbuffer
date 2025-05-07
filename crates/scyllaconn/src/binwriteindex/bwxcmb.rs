@@ -57,7 +57,6 @@ impl BinWriteIndexStream {
         for rt in rts {
             let s = BinWriteIndexRtStream::new(
                 rt.clone(),
-                rt.clone(),
                 series.clone(),
                 PrebinnedPartitioning::Day1,
                 range.clone(),

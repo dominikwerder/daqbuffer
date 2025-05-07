@@ -39,7 +39,6 @@ type Fut2 =
 
 #[derive(Debug)]
 pub struct BinWriteIndexEntry {
-    pub rt: u16,
     pub lsp: u32,
     pub binlen: u32,
 }
@@ -54,7 +53,6 @@ pub struct BinWriteIndexSet {
 #[derive(Debug)]
 pub struct BinWriteIndexRtStream {
     rt1: RetentionTime,
-    rt2: RetentionTime,
     series: SeriesId,
     scyqueue: ScyllaQueue,
     pbp: PrebinnedPartitioning,
@@ -72,7 +70,6 @@ impl BinWriteIndexRtStream {
 
     pub fn new(
         rt1: RetentionTime,
-        rt2: RetentionTime,
         series: SeriesId,
         pbp: PrebinnedPartitioning,
         range: NanoRange,
@@ -84,7 +81,6 @@ impl BinWriteIndexRtStream {
         let (msp_end, lsp_end) = pbp.msp_lsp(range.end_ts().add_dt_nano(pbp.bin_len().dt_ns()).to_ts_ms());
         BinWriteIndexRtStream {
             rt1,
-            rt2,
             series,
             scyqueue,
             pbp,
@@ -99,7 +95,6 @@ impl BinWriteIndexRtStream {
     async fn next_query_fut(
         scyqueue: &ScyllaQueue,
         rt1: RetentionTime,
-        rt2: RetentionTime,
         series: SeriesId,
         pbp: PrebinnedPartitioning,
         msp: u32,
@@ -108,7 +103,7 @@ impl BinWriteIndexRtStream {
     ) -> Result<(u32, u32, u32, VecDeque<BinWriteIndexEntry>), crate::worker::Error> {
         debug!("make_next_query_fut  msp {}  lsp {} {}", msp, lsp_min, lsp_max);
         let res = scyqueue
-            .bin_write_index_read(rt1, rt2, series, pbp, MspU32(msp), lsp_min, lsp_max)
+            .bin_write_index_read(rt1, series, pbp, MspU32(msp), lsp_min, lsp_max)
             .await?;
         Ok((msp, lsp_min, lsp_max, res))
     }
@@ -128,7 +123,6 @@ impl BinWriteIndexRtStream {
             let fut = Self::next_query_fut(
                 scyqueue,
                 self.rt1.clone(),
-                self.rt2.clone(),
                 self.series.clone(),
                 self.pbp.clone(),
                 msp,
@@ -160,7 +154,10 @@ impl Stream for BinWriteIndexRtStream {
                         };
                         Ready(Some(Ok(item)))
                     }
-                    Ready(Err(e)) => Ready(Some(Err(e.into()))),
+                    Ready(Err(e)) => {
+                        self.fut1 = None;
+                        Ready(Some(Err(e.into())))
+                    }
                     Pending => Pending,
                 }
             } else if let Some(fut) = self.as_mut().make_next_query_fut(cx) {

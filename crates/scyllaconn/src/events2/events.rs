@@ -70,7 +70,7 @@ impl EventReadOpts {
         Self {
             one_before,
             with_values,
-            qucap: qucap.unwrap_or(1),
+            qucap: qucap.unwrap_or(3),
         }
     }
 
