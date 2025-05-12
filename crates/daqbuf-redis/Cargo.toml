@@ -2,11 +2,11 @@
 name = "daqbuf-redis"
 version = "0.0.1"
 authors = ["Dominik Werder <dominik.werder@gmail.com>"]
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 autoerr = "0.0.3"
 taskrun = { path = "../taskrun" }
-redis = { version = "0.30.0", features = [] }
+redis = { version = "0.31.0", features = [] }

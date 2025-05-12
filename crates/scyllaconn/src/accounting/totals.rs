@@ -9,10 +9,10 @@ use items_0::Empty;
 use items_0::Extendable;
 use items_0::WithLen;
 use items_2::accounting::AccountingEvents;
+use netpod::EMIT_ACCOUNTING_SNAP;
 use netpod::log::*;
 use netpod::range::evrange::NanoRange;
 use netpod::timeunits;
-use netpod::EMIT_ACCOUNTING_SNAP;
 use scylla::statement::prepared::PreparedStatement;
 use std::collections::VecDeque;
 use std::pin::Pin;
@@ -215,7 +215,7 @@ impl Stream for AccountingStreamScylla {
                         continue;
                     }
                 }
-                FrState::ReadValues(ref mut st) => match st.fut.poll_unpin(cx) {
+                FrState::ReadValues(st) => match st.fut.poll_unpin(cx) {
                     Ready(Ok(mut item)) => {
                         if !st.next() {
                             self.state = FrState::Done;

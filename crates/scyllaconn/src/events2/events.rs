@@ -9,18 +9,16 @@ use futures_util::FutureExt;
 use futures_util::Stream;
 use futures_util::StreamExt;
 use futures_util::TryStreamExt;
+use items_0::Appendable;
+use items_0::Empty;
+use items_0::WithLen;
 use items_0::container::ByteEstimate;
 use items_0::merge::DrainIntoNewDynResult;
 use items_0::merge::MergeableDyn;
 use items_0::scalar_ops::ScalarOps;
 use items_0::timebin::BinningggContainerEventsDyn;
-use items_0::Appendable;
-use items_0::Empty;
-use items_0::WithLen;
 use items_2::binning::container_events::ContainerEvents;
 use items_2::channelevents::ChannelEvents;
-use netpod::log;
-use netpod::ttl::RetentionTime;
 use netpod::ChConf;
 use netpod::DtNano;
 use netpod::EnumVariant;
@@ -29,6 +27,8 @@ use netpod::Shape;
 use netpod::TsMs;
 use netpod::TsMsVecFmt;
 use netpod::TsNano;
+use netpod::log;
+use netpod::ttl::RetentionTime;
 use scylla::client::session::Session;
 use std::collections::VecDeque;
 use std::fmt;
@@ -70,7 +70,7 @@ impl EventReadOpts {
         Self {
             one_before,
             with_values,
-            qucap: qucap.unwrap_or(3),
+            qucap: qucap.unwrap_or(6),
         }
     }
 

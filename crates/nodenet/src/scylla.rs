@@ -1,6 +1,4 @@
 use daqbuf_err as err;
-use err::thiserror;
-use err::ThisError;
 use futures_util::Future;
 use futures_util::FutureExt;
 use futures_util::Stream;
@@ -25,11 +23,12 @@ use std::task::Poll;
 use streams::timebin::cached::reader::EventsReadProvider;
 use taskrun::tokio;
 
-#[derive(Debug, ThisError)]
-#[cstm(name = "ScyllaChannelEventStream")]
-pub enum Error {
-    MergeRt(#[from] mergert::Error),
-}
+autoerr::create_error_v1!(
+    name(Error, "ScyllaChannelEventStream"),
+    enum variants {
+        MergeRt(#[from] mergert::Error),
+    },
+);
 
 pub async fn scylla_channel_event_stream(
     evq: EventsSubQuery,

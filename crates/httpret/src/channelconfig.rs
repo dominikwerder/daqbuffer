@@ -68,6 +68,7 @@ autoerr::create_error_v1!(
         Async(#[from] netpod::AsyncChannelError),
         ChannelConfig(#[from] dbconn::channelconfig::Error),
         Netpod(#[from] netpod::Error),
+        ScyllaConn(#[from] scyllaconn::conn::Error),
         ScyllaExecution(#[from] scyllaconn::scylla::errors::ExecutionError),
         ScyllaPagerExecution(#[from] scyllaconn::scylla::errors::PagerExecutionError),
         ScyllanextRow(#[from] scyllaconn::scylla::errors::NextRowError),
@@ -484,9 +485,7 @@ impl ScyllaChannelsActive {
             .cluster
             .scylla_st()
             .ok_or_else(|| Error::ExpectScyllaBackend)?;
-        let scy = scyllaconn::conn::create_scy_session(scyco)
-            .await
-            .map_err(other_err_error)?;
+        let scy = scyllaconn::conn::create_scy_session(scyco).await?;
         // Database stores tsedge/ts_msp in units of (10 sec), and we additionally map to the grid.
         let tsedge = q.tsedge / 10 / (6 * 2) * (6 * 2);
         info!(
@@ -875,9 +874,7 @@ impl GenerateScyllaTestData {
 
     async fn process(&self, node_config: &NodeConfigCached) -> Result<(), Error> {
         let scyconf = node_config.node_config.cluster.scylla_st().unwrap();
-        let scy = scyllaconn::conn::create_scy_session(scyconf)
-            .await
-            .map_err(other_err_error)?;
+        let scy = scyllaconn::conn::create_scy_session(scyconf).await?;
         let series: u64 = 42001;
         // TODO query `ts_msp` for all MSP values und use that to delete from event table first.
         // Only later delete also from the `ts_msp` table.

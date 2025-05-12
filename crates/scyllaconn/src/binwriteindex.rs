@@ -1,4 +1,5 @@
 pub mod bwxcmb;
+pub mod read_all_coarse;
 
 use crate::worker::ScyllaQueue;
 use daqbuf_series::msp::MspU32;
@@ -10,6 +11,7 @@ use futures_util::Stream;
 use netpod::log;
 use netpod::range::evrange::NanoRange;
 use netpod::ttl::RetentionTime;
+use netpod::DtMs;
 use std::collections::VecDeque;
 use std::fmt;
 use std::pin::Pin;
@@ -45,7 +47,6 @@ pub struct BinWriteIndexEntry {
 
 #[derive(Debug)]
 pub struct BinWriteIndexSet {
-    pub rt: RetentionTime,
     pub msp: MspU32,
     pub entries: VecDeque<BinWriteIndexEntry>,
 }
@@ -78,7 +79,12 @@ impl BinWriteIndexRtStream {
         info!("{}::new  INFO/DEBUG test", Self::type_name());
         debug!("{}::new", Self::type_name());
         let (msp_beg, lsp_beg) = pbp.msp_lsp(range.beg_ts().to_ts_ms());
-        let (msp_end, lsp_end) = pbp.msp_lsp(range.end_ts().add_dt_nano(pbp.bin_len().dt_ns()).to_ts_ms());
+        let (msp_end, lsp_end) = pbp.msp_lsp(
+            range
+                .end_ts()
+                .add_dt_nano(DtMs::from_ms_u64(pbp.bin_len().ms() - 1).dt_ns())
+                .to_ts_ms(),
+        );
         BinWriteIndexRtStream {
             rt1,
             series,
@@ -148,7 +154,6 @@ impl Stream for BinWriteIndexRtStream {
                     Ready(Ok(x)) => {
                         self.fut1 = None;
                         let item = BinWriteIndexSet {
-                            rt: self.rt1.clone(),
                             msp: MspU32(x.0),
                             entries: x.3,
                         };

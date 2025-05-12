@@ -1,5 +1,6 @@
 pub mod accounting;
 pub mod bincache;
+pub mod binned2;
 pub mod binwriteindex;
 pub mod conn;
 pub mod errconv;

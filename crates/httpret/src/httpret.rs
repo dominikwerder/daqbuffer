@@ -381,6 +381,8 @@ async fn http_service_inner(
         }
     } else if let Some(h) = api4::binwriteindex::BinWriteIndexHandler::handler(&req) {
         Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
+    } else if let Some(h) = api4::binned_v2::BinnedV2Handler::handler(&req) {
+        Ok(h.handle(req, ctx, &shared_res, &node_config).await?)
     } else if let Some(h) = api4::eventdata::EventDataHandler::handler(&req) {
         Ok(h.handle(req, ctx, &node_config, shared_res)
             .await

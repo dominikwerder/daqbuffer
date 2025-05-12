@@ -5,7 +5,6 @@ use crate::events2::prepare::StmtsEvents;
 use crate::range::ScyllaSeriesRange;
 use async_channel::Receiver;
 use async_channel::Sender;
-use daqbuf_err as err;
 use daqbuf_series::msp::MspU32;
 use daqbuf_series::msp::PrebinnedPartitioning;
 use daqbuf_series::SeriesId;
@@ -34,7 +33,7 @@ const SCYLLA_WORKER_QUEUE_LEN: usize = 200;
 autoerr::create_error_v1!(
     name(Error, "ScyllaWorker"),
     enum variants {
-        ScyllaConnection(err::Error),
+        ScyllaConnection(#[from] crate::conn::Error),
         Prepare(#[from] crate::events2::prepare::Error),
         Events(#[from] crate::events2::events::Error),
         Msp(#[from] crate::events2::msp::Error),
@@ -326,9 +325,7 @@ impl ScyllaWorker {
     }
 
     pub async fn work(self) -> Result<(), Error> {
-        let scy = create_scy_session_no_ks(&self.scyconf_st)
-            .await
-            .map_err(Error::ScyllaConnection)?;
+        let scy = create_scy_session_no_ks(&self.scyconf_st).await?;
         let scy = Arc::new(scy);
         let kss = [
             self.scyconf_st.keyspace.as_str(),
